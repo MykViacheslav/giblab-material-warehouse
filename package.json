@@ -1,0 +1,17 @@
+{
+  "name": "giblab-material-warehouse",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "app": "powershell -NoProfile -ExecutionPolicy Bypass -File ./start-warehouse.ps1"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "multer": "^2.0.2",
+    "tesseract.js": "^7.0.0",
+    "xlsx": "^0.18.5"
+  }
+}
