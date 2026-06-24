@@ -6,6 +6,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { createWorker } from "tesseract.js";
 import XLSX from "xlsx";
+import { applyStockEvent, assertCanUseStock, parseNonNegativeQuantity, parsePositiveQuantity, StockMovementError } from "./src/stockLogic.js";
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -307,20 +308,29 @@ app.delete("/api/materials/:id", (request, response) => {
 
 app.post("/api/stock/event", (request, response) => {
   const materialId = Number(request.body.material_id);
-  const quantity = Number(request.body.quantity || 0);
   const eventType = String(request.body.event_type || "");
   const note = String(request.body.note || "");
-  if (!materialId || !quantity || !["receive", "reserve", "release", "use", "adjust"].includes(eventType)) {
+  if (!materialId || !["receive", "reserve", "release", "use", "adjust"].includes(eventType)) {
     return response.status(400).json({ error: "Invalid stock event" });
   }
-  db.prepare("INSERT OR IGNORE INTO stock (material_id) VALUES (?)").run(materialId);
-  if (eventType === "receive") db.prepare("UPDATE stock SET quantity = quantity + ? WHERE material_id = ?").run(quantity, materialId);
-  if (eventType === "reserve") db.prepare("UPDATE stock SET reserved = reserved + ? WHERE material_id = ?").run(quantity, materialId);
-  if (eventType === "release") db.prepare("UPDATE stock SET reserved = MAX(0, reserved - ?) WHERE material_id = ?").run(quantity, materialId);
-  if (eventType === "use") db.prepare("UPDATE stock SET quantity = MAX(0, quantity - ?), used = used + ? WHERE material_id = ?").run(quantity, quantity, materialId);
-  if (eventType === "adjust") db.prepare("UPDATE stock SET quantity = ? WHERE material_id = ?").run(quantity, materialId);
-  db.prepare("INSERT INTO stock_events (material_id, event_type, quantity, note) VALUES (?, ?, ?, ?)").run(materialId, eventType, quantity, note);
-  response.json(selectStockById.get(materialId));
+  if (!selectMaterial.get(materialId)) return response.status(404).json({ error: "Material not found" });
+  try {
+    const quantity = eventType === "adjust"
+      ? parseNonNegativeQuantity(request.body.quantity)
+      : parsePositiveQuantity(request.body.quantity);
+    const updated = runInTransaction(() => {
+      db.prepare("INSERT OR IGNORE INTO stock (material_id) VALUES (?)").run(materialId);
+      const current = db.prepare("SELECT * FROM stock WHERE material_id = ?").get(materialId);
+      const next = applyStockEvent(current, eventType, quantity);
+      db.prepare("UPDATE stock SET quantity = ?, reserved = ?, used = ? WHERE material_id = ?").run(next.quantity, next.reserved, next.used, materialId);
+      db.prepare("INSERT INTO stock_events (material_id, event_type, quantity, note) VALUES (?, ?, ?, ?)").run(materialId, eventType, quantity, note);
+      return selectStockById.get(materialId);
+    });
+    response.json(updated);
+  } catch (error) {
+    if (error instanceof StockMovementError) return response.status(400).json({ error: error.message, details: error.details });
+    throw error;
+  }
 });
 
 app.get("/api/offcuts", (request, response) => {
@@ -813,17 +823,27 @@ app.post("/api/cut-jobs/:id/import-project", upload.single("project"), (request,
   const xml = request.file?.buffer.toString("utf8") || String(request.body.xml || "");
   if (!xml.trim()) return response.status(400).json({ error: "Missing project XML" });
   const name = request.file?.originalname || request.body.name || `${job.name}.project`;
-  const report = importProject(xml, name);
-  db.prepare("UPDATE cut_jobs SET project_path = ?, status = ? WHERE id = ?").run(name, "Wynik z GibLab zaimportowany", jobId);
-  if (job.order_id) db.prepare("UPDATE orders SET project_path = ?, production_status = ? WHERE id = ?").run(name, "Po rozkroju", job.order_id);
-  response.json(report);
+  try {
+    const report = importProject(xml, name);
+    db.prepare("UPDATE cut_jobs SET project_path = ?, status = ? WHERE id = ?").run(name, "Wynik z GibLab zaimportowany", jobId);
+    if (job.order_id) db.prepare("UPDATE orders SET project_path = ?, production_status = ? WHERE id = ?").run(name, "Po rozkroju", job.order_id);
+    response.json(report);
+  } catch (error) {
+    if (sendStockMovementError(response, error)) return;
+    throw error;
+  }
 });
 
 app.post("/api/project/import", upload.single("project"), (request, response) => {
   const xml = request.file?.buffer.toString("utf8") || String(request.body.xml || "");
   if (!xml.trim()) return response.status(400).json({ error: "Missing project XML" });
-  const report = importProject(xml, request.file?.originalname || request.body.name || "");
-  response.json(report);
+  try {
+    const report = importProject(xml, request.file?.originalname || request.body.name || "");
+    response.json(report);
+  } catch (error) {
+    if (sendStockMovementError(response, error)) return;
+    throw error;
+  }
 });
 
 app.post("/api/project/import-latest", (request, response) => {
@@ -838,8 +858,13 @@ app.post("/api/project/import-latest", (request, response) => {
     .sort((a, b) => b.mtimeMs - a.mtimeMs)[0];
   if (!latest) return response.status(404).json({ error: "No .project files found" });
   const xml = readFileSync(latest.fullPath, "utf8");
-  const report = importProject(xml, latest.name, latest.fullPath);
-  response.json({ ...report, path: latest.fullPath });
+  try {
+    const report = importProject(xml, latest.name, latest.fullPath);
+    response.json({ ...report, path: latest.fullPath });
+  } catch (error) {
+    if (sendStockMovementError(response, error)) return;
+    throw error;
+  }
 });
 
 app.get("/api/integration/remainder-logs", (request, response) => {
@@ -893,6 +918,12 @@ function normalizeMaterial(input) {
     length: toNullableNumber(input.length),
     width: toNullableNumber(input.width)
   };
+}
+
+function sendStockMovementError(response, error) {
+  if (!(error instanceof StockMovementError)) return false;
+  response.status(400).json({ error: error.message, details: error.details });
+  return true;
 }
 
 function normalizeCustomer(input) {
@@ -1298,40 +1329,44 @@ function buildTree(rows) {
 }
 
 function importProject(xml, projectName, projectPath = projectName) {
-  const materials = [...xml.matchAll(/<material\b([^>]*)\/?>/g)].map((match) => parseAttributes(match[1]));
-  const parts = [...xml.matchAll(/<part\b([^>]*)\/?>/g)].map((match) => parseAttributes(match[1]));
-  const goods = [...xml.matchAll(/<good\b([^>]*)\/?>/g)].map((match) => parseAttributes(match[1]));
-  const sheetGood = goods.find((good) => good.typeId === "sheet" && good.code);
-  let usedCount = 0;
-  let offcutCount = 0;
+  return runInTransaction(() => {
+    const materials = [...xml.matchAll(/<material\b([^>]*)\/?>/g)].map((match) => parseAttributes(match[1]));
+    const parts = [...xml.matchAll(/<part\b([^>]*)\/?>/g)].map((match) => parseAttributes(match[1]));
+    const goods = [...xml.matchAll(/<good\b([^>]*)\/?>/g)].map((match) => parseAttributes(match[1]));
+    const sheetGood = goods.find((good) => good.typeId === "sheet" && good.code);
+    let usedCount = 0;
+    let offcutCount = 0;
 
-  for (const material of materials) {
-    const code = material.code || "";
-    const used = Number(material.usedCount || material.usedcount || 0);
-    if (!code || !used) continue;
-    const stockRow = db.prepare("SELECT id FROM materials WHERE code = ? LIMIT 1").get(code);
-    if (!stockRow) continue;
-    db.prepare("INSERT OR IGNORE INTO stock (material_id) VALUES (?)").run(stockRow.id);
-    db.prepare("UPDATE stock SET quantity = MAX(0, quantity - ?), used = used + ? WHERE material_id = ?").run(used, used, stockRow.id);
-    db.prepare("INSERT INTO stock_events (material_id, event_type, quantity, note) VALUES (?, 'use', ?, ?)").run(stockRow.id, used, `Import projektu ${projectName}`);
-    usedCount += 1;
-  }
+    for (const material of materials) {
+      const code = material.code || "";
+      const used = Number(material.usedCount || material.usedcount || 0);
+      if (!code || !used) continue;
+      const stockRow = db.prepare("SELECT id FROM materials WHERE code = ? LIMIT 1").get(code);
+      if (!stockRow) continue;
+      db.prepare("INSERT OR IGNORE INTO stock (material_id) VALUES (?)").run(stockRow.id);
+      const current = db.prepare("SELECT * FROM stock WHERE material_id = ?").get(stockRow.id);
+      assertCanUseStock(current, used, { materialCode: code, projectName });
+      db.prepare("UPDATE stock SET quantity = quantity - ?, used = used + ? WHERE material_id = ?").run(used, used, stockRow.id);
+      db.prepare("INSERT INTO stock_events (material_id, event_type, quantity, note) VALUES (?, 'use', ?, ?)").run(stockRow.id, used, `Import projektu ${projectName}`);
+      usedCount += 1;
+    }
 
-  for (const part of parts) {
-    const isWaste = part.waste === "true" || part.dblId || part.dblid || part.dbId || part.dbid;
-    if (!isWaste) continue;
-    const id = part.dblId || part.dblid || part.dbId || part.dbid || `${projectName}:${part.id}`;
-    const length = Number(part.l || part.length || 0);
-    const width = Number(part.w || part.width || 0);
-    if (!length || !width) continue;
-    db.prepare(`
-      INSERT OR REPLACE INTO offcuts (id, code, length, width, quantity, is_business, project_name, project_path, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'available')
-    `).run(id, sheetGood?.code || "", length, width, Number(part.count || 1), truthyNumber(part.business), projectName, projectPath);
-    offcutCount += 1;
-  }
+    for (const part of parts) {
+      const isWaste = part.waste === "true" || part.dblId || part.dblid || part.dbId || part.dbid;
+      if (!isWaste) continue;
+      const id = part.dblId || part.dblid || part.dbId || part.dbid || `${projectName}:${part.id}`;
+      const length = Number(part.l || part.length || 0);
+      const width = Number(part.w || part.width || 0);
+      if (!length || !width) continue;
+      db.prepare(`
+        INSERT OR REPLACE INTO offcuts (id, code, length, width, quantity, is_business, project_name, project_path, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'available')
+      `).run(id, sheetGood?.code || "", length, width, Number(part.count || 1), truthyNumber(part.business), projectName, projectPath);
+      offcutCount += 1;
+    }
 
-  return { projectName, materialUsageRows: usedCount, offcuts: offcutCount };
+    return { projectName, materialUsageRows: usedCount, offcuts: offcutCount };
+  });
 }
 
 function importRemaindersReport(text, headers) {
