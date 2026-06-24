@@ -95,8 +95,8 @@ function activateTab(tabName) {
 elements.hideTreeBtn.addEventListener("click", () => setTreeHidden(true));
 elements.showTreeBtn.addEventListener("click", () => setTreeHidden(false));
 elements.stockForm.elements.event_type.value = "receive";
-elements.stockForm.elements.event_type.querySelector('[value="use_reserved"]').textContent = "Zuzycie rezerwacji";
-document.querySelectorAll("#stockTab th")[5].textContent = "Dostepne";
+elements.stockForm.elements.event_type.querySelector('[value="use_reserved"]').textContent = "Zużycie rezerwacji";
+document.querySelectorAll("#stockTab th")[5].textContent = "Dostępne";
 
 document.querySelector("#importDefaultBtn").addEventListener("click", async () => {
   const result = await postJson("/api/import/goods", {});
