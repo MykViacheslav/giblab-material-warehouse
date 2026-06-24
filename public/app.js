@@ -133,6 +133,7 @@ document.querySelector("#polishCatalogBtn").addEventListener("click", async () =
 document.querySelector("#clearFormBtn").addEventListener("click", () => {
   state.selectedId = null;
   elements.materialForm.reset();
+  elements.materialForm.elements.is_active.checked = true;
 });
 
 document.querySelector("#clearCustomerBtn").addEventListener("click", () => {
@@ -416,6 +417,7 @@ elements.materialForm.addEventListener("submit", async (event) => {
   await postJson(url, payload, state.selectedId ? "PUT" : "POST");
   state.selectedId = null;
   elements.materialForm.reset();
+  elements.materialForm.elements.is_active.checked = true;
   await refreshAll();
   showToast("Pozycja katalogu zapisana");
 });
@@ -608,11 +610,18 @@ function renderMaterials() {
       <td>${row.isfolder ? "1" : "0"}</td>
       <td>${escapeHtml(row.code)}</td>
       <td>${escapeHtml(row.name)}</td>
+      <td>${escapeHtml(row.producer || "")}</td>
+      <td>${escapeHtml([row.decor_code, row.decor_name].filter(Boolean).join(" "))}</td>
+      <td>${escapeHtml(row.structure || "")}</td>
+      <td>${escapeHtml(row.material_type || "")}</td>
       <td>${escapeHtml(row.unit)}</td>
       <td>${formatNumber(row.price)}</td>
       <td>${formatNumber(row.thickness)}</td>
       <td>${formatNumber(row.length)}</td>
       <td>${formatNumber(row.width)}</td>
+      <td>${formatNumber(row.min_stock)}</td>
+      <td>${escapeHtml(row.location || "")}</td>
+      <td>${row.is_active === 0 ? "0" : "1"}</td>
     </tr>
   `).join("");
   elements.materialsBody.querySelectorAll("tr").forEach((rowElement) => {

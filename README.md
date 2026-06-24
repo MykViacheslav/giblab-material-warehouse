@@ -109,6 +109,21 @@ npm test
 
 Tests use temporary data and do not modify `data/warehouse.sqlite`.
 
+## Material catalog fields
+
+The material catalog stores woodworking details used by warehouse, cutting and future invoice/OCR matching:
+
+- producer
+- decor code and decor name
+- structure
+- material type
+- supplier
+- warehouse location
+- minimum stock
+- active/inactive flag
+
+Existing material fields such as code, name, unit, price, thickness, length and width are preserved.
+
 ## GibLab
 
 Przyciski integracyjne są schowane pod `Narzędzia GibLab`, żeby nie zajmowały miejsca w codziennej pracy. Są tam funkcje importu katalogu, eksportu `goods.xls` i zapisu do folderu GibLab.

@@ -462,8 +462,29 @@
             <label class="check"><input name="isfolder" type="checkbox"> Folder</label>
             <input name="code" placeholder="Kod">
             <input name="name" placeholder="Nazwa" required>
+            <input name="producer" placeholder="Producent">
+            <input name="decor_code" placeholder="Kod dekoru">
+            <input name="decor_name" placeholder="Nazwa dekoru">
+            <input name="structure" placeholder="Struktura">
+            <select name="material_type">
+              <option value="">Typ materialu</option>
+              <option value="chipboard">Plyta wiorowa</option>
+              <option value="MDF">MDF</option>
+              <option value="HDF">HDF</option>
+              <option value="plywood">Sklejka</option>
+              <option value="edge_band">Obrzeze</option>
+              <option value="HPL">HPL</option>
+              <option value="veneer">Fornir</option>
+              <option value="worktop">Blat</option>
+              <option value="hardware">Okucia</option>
+              <option value="other">Inne</option>
+            </select>
             <input name="unit" placeholder="Jednostka">
             <input name="price" placeholder="Cena">
+            <input name="supplier" placeholder="Dostawca">
+            <input name="location" placeholder="Lokalizacja">
+            <input name="min_stock" placeholder="Min. stan">
+            <label class="check"><input name="is_active" type="checkbox" checked> Aktywny</label>
             <input name="thickness" placeholder="Grubość">
             <input name="length" placeholder="Długość">
             <input name="width" placeholder="Szerokość">
@@ -480,11 +501,18 @@
                   <th>Folder</th>
                   <th>Kod</th>
                   <th>Nazwa</th>
+                  <th>Producent</th>
+                  <th>Dekor</th>
+                  <th>Str.</th>
+                  <th>Typ</th>
                   <th>J.m.</th>
                   <th>Cena</th>
                   <th>G</th>
                   <th>D</th>
                   <th>S</th>
+                  <th>Min.</th>
+                  <th>Lok.</th>
+                  <th>Akt.</th>
                 </tr>
               </thead>
               <tbody id="materialsBody"></tbody>

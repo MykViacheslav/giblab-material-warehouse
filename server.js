@@ -8,6 +8,7 @@ import { createWorker } from "tesseract.js";
 import XLSX from "xlsx";
 import { assertCanUseStock, parseNonNegativeQuantity, parsePositiveQuantity, StockMovementError } from "./src/stockLogic.js";
 import { applyStockEventToDatabase, listStockEvents, withAvailableStock } from "./src/stockRepository.js";
+import { MATERIAL_CATALOG_COLUMNS, MATERIAL_CATALOG_FIELD_NAMES, normalizeMaterialCatalogFields } from "./src/materialCatalog.js";
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -204,6 +205,9 @@ db.exec(`
 ensureColumn("orders", "payment_status_manual", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("payments", "payer_name", "TEXT DEFAULT ''");
 ensureColumn("payments", "received_by", "TEXT DEFAULT ''");
+for (const [columnName, definition] of MATERIAL_CATALOG_COLUMNS) {
+  ensureColumn("materials", columnName, definition);
+}
 ensureColumn("quote_lines", "cut_job_id", "INTEGER REFERENCES cut_jobs(id) ON DELETE SET NULL");
 ensureColumn("cut_parts", "material_id", "INTEGER REFERENCES materials(id) ON DELETE SET NULL");
 ensureColumn("cut_parts", "material_code", "TEXT DEFAULT ''");
@@ -217,6 +221,18 @@ seedDefaultPriceItems();
 
 const selectMaterials = db.prepare("SELECT * FROM materials ORDER BY sort_order, id");
 const selectMaterial = db.prepare("SELECT * FROM materials WHERE id = ?");
+const materialBaseColumns = ["id", "paren_id", "isfolder", "code", "name", "unit", "price", "thickness", "length", "width"];
+const materialWriteColumns = [...materialBaseColumns, ...MATERIAL_CATALOG_FIELD_NAMES];
+const materialUpdateColumns = materialWriteColumns.filter((column) => column !== "id");
+const insertMaterialSql = `
+  INSERT INTO materials (${[...materialWriteColumns, "sort_order"].join(", ")})
+  VALUES (${[...materialWriteColumns, "sort_order"].map(() => "?").join(", ")})
+`;
+const updateMaterialSql = `
+  UPDATE materials
+  SET ${materialUpdateColumns.map((column) => `${column} = ?`).join(", ")}
+  WHERE id = ?
+`;
 const selectStock = db.prepare(`
   SELECT m.*, COALESCE(s.quantity, 0) AS quantity, COALESCE(s.reserved, 0) AS reserved, COALESCE(s.used, 0) AS used
   FROM materials m
@@ -282,10 +298,7 @@ app.get("/api/materials/flat", (request, response) => {
 app.post("/api/materials", (request, response) => {
   const payload = normalizeMaterial(request.body);
   const id = payload.id !== null ? payload.id : nextMaterialId(payload.isfolder);
-  db.prepare(`
-    INSERT INTO materials (id, paren_id, isfolder, code, name, unit, price, thickness, length, width, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, payload.paren_id, payload.isfolder, payload.code, payload.name, payload.unit, payload.price, payload.thickness, payload.length, payload.width, id);
+  db.prepare(insertMaterialSql).run(...materialValues({ ...payload, id }), id);
   db.prepare("INSERT OR IGNORE INTO stock (material_id) VALUES (?)").run(id);
   response.status(201).json(withAvailableStock(selectStockById.get(id)));
 });
@@ -294,11 +307,7 @@ app.put("/api/materials/:id", (request, response) => {
   const id = Number(request.params.id);
   if (!selectMaterial.get(id)) return response.status(404).json({ error: "Material not found" });
   const payload = normalizeMaterial({ ...request.body, id });
-  db.prepare(`
-    UPDATE materials
-    SET paren_id = ?, isfolder = ?, code = ?, name = ?, unit = ?, price = ?, thickness = ?, length = ?, width = ?
-    WHERE id = ?
-  `).run(payload.paren_id, payload.isfolder, payload.code, payload.name, payload.unit, payload.price, payload.thickness, payload.length, payload.width, id);
+  db.prepare(updateMaterialSql).run(...materialUpdateValues(payload), id);
   response.json(withAvailableStock(selectStockById.get(id)));
 });
 
@@ -925,8 +934,17 @@ function normalizeMaterial(input) {
     price: toNullableNumber(input.price),
     thickness: toNullableNumber(input.thickness),
     length: toNullableNumber(input.length),
-    width: toNullableNumber(input.width)
+    width: toNullableNumber(input.width),
+    ...normalizeMaterialCatalogFields(input)
   };
+}
+
+function materialValues(material) {
+  return materialWriteColumns.map((column) => material[column] ?? null);
+}
+
+function materialUpdateValues(material) {
+  return materialUpdateColumns.map((column) => material[column] ?? null);
 }
 
 function sendStockMovementError(response, error) {
@@ -1257,8 +1275,8 @@ function nextMaterialId(isfolder) {
 
 function importGoodsRows(rows) {
   const insert = db.prepare(`
-    INSERT OR REPLACE INTO materials (id, paren_id, isfolder, code, name, unit, price, thickness, length, width, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO materials (${[...materialWriteColumns, "sort_order"].join(", ")})
+    VALUES (${[...materialWriteColumns, "sort_order"].map(() => "?").join(", ")})
   `);
   const ensureStock = db.prepare("INSERT OR IGNORE INTO stock (material_id) VALUES (?)");
   db.exec("BEGIN");
@@ -1275,10 +1293,19 @@ function importGoodsRows(rows) {
         price: row.price,
         thickness: row.thickness ?? row["???????"],
         length: row.length ?? row["?????"],
-        width: row.width ?? row["??????"]
+        width: row.width ?? row["??????"],
+        producer: row.producer,
+        decor_code: row.decor_code ?? row.decorCode,
+        decor_name: row.decor_name ?? row.decorName,
+        structure: row.structure,
+        material_type: row.material_type ?? row.materialType,
+        supplier: row.supplier,
+        location: row.location,
+        min_stock: row.min_stock ?? row.minStock,
+        is_active: row.is_active ?? row.isActive
       });
       if (material.id === null) return;
-      insert.run(material.id, material.paren_id, material.isfolder, material.code, material.name, material.unit, material.price, material.thickness, material.length, material.width, index);
+      insert.run(...materialValues(material), index);
       ensureStock.run(material.id);
     });
     db.exec("COMMIT");
@@ -1297,15 +1324,24 @@ function toGoodsRow(row) {
     name: row.name,
     unit: row.unit,
     price: row.price ?? "",
-        thickness: row.thickness ?? row["???????"],
-        length: row.length ?? row["?????"],
-        width: row.width ?? row["??????"]
+    thickness: row.thickness ?? row["???????"],
+    length: row.length ?? row["?????"],
+    width: row.width ?? row["??????"],
+    producer: row.producer ?? "",
+    decor_code: row.decor_code ?? "",
+    decor_name: row.decor_name ?? "",
+    structure: row.structure ?? "",
+    material_type: row.material_type ?? "",
+    supplier: row.supplier ?? "",
+    location: row.location ?? "",
+    min_stock: row.min_stock ?? 0,
+    is_active: row.is_active ?? 1
   };
 }
 
 function writeGoodsFile(target) {
   const rows = selectMaterials.all().map(toGoodsRow);
-  const worksheet = XLSX.utils.json_to_sheet(rows, { header: ["id", "paren_id", "isfolder", "code", "name", "unit", "price", "thickness", "length", "width"] });
+  const worksheet = XLSX.utils.json_to_sheet(rows, { header: [...materialWriteColumns] });
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "goods");
   const buffer = XLSX.write(workbook, { type: "buffer", bookType: "biff8" });
