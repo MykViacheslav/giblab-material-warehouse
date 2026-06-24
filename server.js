@@ -9,6 +9,7 @@ import XLSX from "xlsx";
 import { assertCanUseStock, parseNonNegativeQuantity, parsePositiveQuantity, StockMovementError } from "./src/stockLogic.js";
 import { applyStockEventToDatabase, listStockEvents, withAvailableStock } from "./src/stockRepository.js";
 import { MATERIAL_CATALOG_COLUMNS, MATERIAL_CATALOG_FIELD_NAMES, normalizeMaterialCatalogFields } from "./src/materialCatalog.js";
+import { commitMaterialImport, previewMaterialImport } from "./src/materialImport.js";
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -293,6 +294,34 @@ app.get("/api/materials", (request, response) => {
 
 app.get("/api/materials/flat", (request, response) => {
   response.json(selectStock.all().map(withAvailableStock));
+});
+
+app.post("/api/materials/import-preview", upload.single("catalog"), (request, response) => {
+  if (!request.file?.buffer) return response.status(400).json({ error: "Import file is required" });
+  try {
+    const rows = readCatalogImportRows(request.file.buffer, request.file.originalname);
+    const preview = previewMaterialImport(rows, selectMaterials.all());
+    response.json({
+      filename: request.file.originalname,
+      ...preview
+    });
+  } catch (error) {
+    console.error(error);
+    response.status(400).json({ error: "Could not parse material catalog file" });
+  }
+});
+
+app.post("/api/materials/import-commit", (request, response) => {
+  const rows = Array.isArray(request.body.rows) ? request.body.rows : [];
+  const mode = String(request.body.mode || "upsert");
+  if (!rows.length) return response.status(400).json({ error: "No import rows supplied" });
+  try {
+    const result = commitMaterialImport(db, rows, mode, { existingMaterials: selectMaterials.all() });
+    response.json(result);
+  } catch (error) {
+    console.error(error);
+    response.status(400).json({ error: error.message || "Could not commit material catalog import" });
+  }
 });
 
 app.post("/api/materials", (request, response) => {
@@ -1271,6 +1300,59 @@ function nextMaterialId(isfolder) {
   const minimum = isfolder ? 1 : 1001;
   const row = db.prepare("SELECT MAX(id) AS max_id FROM materials WHERE id >= ?").get(minimum);
   return Math.max(minimum, Number(row.max_id || minimum - 1) + 1);
+}
+
+function readCatalogImportRows(buffer, filename = "") {
+  if (String(filename).toLowerCase().endsWith(".csv")) return parseCsvRows(buffer.toString("utf8"));
+  const workbook = XLSX.read(buffer, { type: "buffer", cellDates: false });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  if (!sheet) return [];
+  return XLSX.utils.sheet_to_json(sheet, { defval: "", raw: true });
+}
+
+function parseCsvRows(text) {
+  const cleanText = String(text || "").replace(/^\uFEFF/, "");
+  const lines = cleanText.split(/\r?\n/).filter((line) => line.trim() !== "");
+  if (!lines.length) return [];
+  const delimiter = detectCsvDelimiter(lines[0]);
+  const headers = parseCsvLine(lines[0], delimiter).map((header) => header.trim());
+  return lines.slice(1).map((line) => {
+    const values = parseCsvLine(line, delimiter);
+    const row = {};
+    headers.forEach((header, index) => {
+      row[header] = values[index] ?? "";
+    });
+    return row;
+  });
+}
+
+function detectCsvDelimiter(headerLine) {
+  const candidates = [";", "\t", ","];
+  return candidates
+    .map((delimiter) => [delimiter, parseCsvLine(headerLine, delimiter).length])
+    .sort((a, b) => b[1] - a[1])[0][0];
+}
+
+function parseCsvLine(line, delimiter) {
+  const values = [];
+  let current = "";
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    if (char === '"' && line[index + 1] === '"') {
+      current += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === delimiter && !quoted) {
+      values.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  values.push(current.trim());
+  return values;
 }
 
 function importGoodsRows(rows) {

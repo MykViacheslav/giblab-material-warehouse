@@ -300,6 +300,25 @@ select {
   max-height: calc(100vh - 245px);
 }
 
+.compact-panel {
+  margin-bottom: 12px;
+  min-height: 0;
+  padding: 10px;
+}
+
+.compact-panel h3 {
+  font-size: 15px;
+  margin: 0 0 8px;
+}
+
+.toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
 table {
   border-collapse: collapse;
   font-size: 13px;

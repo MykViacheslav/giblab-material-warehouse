@@ -124,6 +124,27 @@ The material catalog stores woodworking details used by warehouse, cutting and f
 
 Existing material fields such as code, name, unit, price, thickness, length and width are preserved.
 
+## Material catalog import
+
+The material catalog can be imported from Excel/CSV files.
+
+Supported formats:
+
+- `.xlsx`
+- `.xls`
+- `.csv`
+
+The import updates only material catalog data.
+
+It does not change warehouse stock quantities and does not create stock events.
+
+Import modes:
+
+- add new
+- update existing
+- upsert
+- skip duplicates
+
 ## GibLab
 
 Przyciski integracyjne są schowane pod `Narzędzia GibLab`, żeby nie zajmowały miejsca w codziennej pracy. Są tam funkcje importu katalogu, eksportu `goods.xls` i zapisu do folderu GibLab.
