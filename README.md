@@ -83,6 +83,32 @@ Potem sprawdź adres IP komputera głównego:
 ipconfig
 ```
 
+## Stock rules
+
+Physical stock, reserved stock and available stock are handled separately.
+
+Available stock is calculated as:
+
+```text
+available = quantity - reserved
+```
+
+Normal `use` can only consume available stock. Reserved material must be consumed explicitly with the `use_reserved` operation.
+
+Stock movement history is stored in `stock_events` and can be read with:
+
+```text
+GET /api/stock/:materialId/events
+```
+
+## Tests
+
+```bash
+npm test
+```
+
+Tests use temporary data and do not modify `data/warehouse.sqlite`.
+
 ## GibLab
 
 Przyciski integracyjne są schowane pod `Narzędzia GibLab`, żeby nie zajmowały miejsca w codziennej pracy. Są tam funkcje importu katalogu, eksportu `goods.xls` i zapisu do folderu GibLab.

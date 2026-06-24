@@ -495,6 +495,7 @@
         <section id="stockTab" class="tab-page">
           <form id="stockForm" class="stock-form">
             <select name="event_type">
+              <option value="use_reserved">ZuĹĽycie rezerwacji</option>
               <option value="receive">Przyjęcie</option>
               <option value="reserve">Rezerwacja</option>
               <option value="release">Zwolnienie rezerwacji</option>
@@ -515,12 +516,15 @@
                   <th>Nazwa</th>
                   <th>Stan</th>
                   <th>Rezerwacja</th>
+                  <th>DostÄ™pne</th>
                   <th>Zużyto</th>
+                  <th>Historia</th>
                 </tr>
               </thead>
               <tbody id="stockBody"></tbody>
             </table>
           </div>
+          <div id="stockHistoryPanel" class="stock-history-panel hint"></div>
         </section>
 
         <section id="offcutsTab" class="tab-page">

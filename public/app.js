@@ -24,6 +24,7 @@ const elements = {
   showTreeBtn: document.querySelector("#showTreeBtn"),
   materialsBody: document.querySelector("#materialsBody"),
   stockBody: document.querySelector("#stockBody"),
+  stockHistoryPanel: document.querySelector("#stockHistoryPanel"),
   offcutsBody: document.querySelector("#offcutsBody"),
   customersBody: document.querySelector("#customersBody"),
   ordersBody: document.querySelector("#ordersBody"),
@@ -93,6 +94,9 @@ function activateTab(tabName) {
 
 elements.hideTreeBtn.addEventListener("click", () => setTreeHidden(true));
 elements.showTreeBtn.addEventListener("click", () => setTreeHidden(false));
+elements.stockForm.elements.event_type.value = "receive";
+elements.stockForm.elements.event_type.querySelector('[value="use_reserved"]').textContent = "Zuzycie rezerwacji";
+document.querySelectorAll("#stockTab th")[5].textContent = "Dostepne";
 
 document.querySelector("#importDefaultBtn").addEventListener("click", async () => {
   const result = await postJson("/api/import/goods", {});
@@ -420,6 +424,7 @@ elements.stockForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   await postJson("/api/stock/event", formPayload(elements.stockForm));
   elements.stockForm.reset();
+  elements.stockForm.elements.event_type.value = "receive";
   await refreshAll();
   showToast("Operacja magazynowa zapisana");
 });
@@ -625,9 +630,35 @@ function renderStock() {
         <td>${escapeHtml(row.name)}</td>
         <td>${formatNumber(row.quantity)}</td>
         <td>${formatNumber(row.reserved)}</td>
+        <td>${formatNumber(row.available)}</td>
         <td>${formatNumber(row.used)}</td>
+        <td><button class="small" data-stock-history="${row.id}" type="button">Historia</button></td>
       </tr>
     `).join("");
+  elements.stockBody.querySelectorAll("[data-stock-history]").forEach((button) => {
+    button.addEventListener("click", () => showStockHistory(Number(button.dataset.stockHistory)));
+  });
+}
+
+async function showStockHistory(materialId) {
+  const material = state.flat.find((row) => Number(row.id) === materialId);
+  elements.stockHistoryPanel.textContent = "Laduję historię...";
+  try {
+    const events = await fetchJson(`/api/stock/${materialId}/events`);
+    const title = `${material?.code || materialId} ${material?.name || ""}`.trim();
+    elements.stockHistoryPanel.innerHTML = `
+      <strong>Historia: ${escapeHtml(title)}</strong>
+      ${events.length ? `
+        <ul class="stock-history-list">
+          ${events.slice(0, 30).map((event) => `
+            <li>${escapeHtml(event.created_at || "")} | ${escapeHtml(event.type || "")} | ${formatNumber(event.quantity)}${event.note ? ` | ${escapeHtml(event.note)}` : ""}</li>
+          `).join("")}
+        </ul>
+      ` : "<div>Brak historii dla tego materiału.</div>"}
+    `;
+  } catch (error) {
+    elements.stockHistoryPanel.textContent = error.message || "Nie udało się pobrać historii";
+  }
 }
 
 function renderCustomers() {

@@ -22,6 +22,10 @@ export function parseNonNegativeQuantity(value, fieldName = "quantity") {
   return quantity;
 }
 
+export function getAvailableQuantity(stock = {}) {
+  return toFiniteNumber(stock.quantity) - toFiniteNumber(stock.reserved);
+}
+
 export function applyStockEvent(currentStock, eventType, quantity) {
   const stock = normalizeStock(currentStock);
   switch (eventType) {
@@ -31,7 +35,7 @@ export function applyStockEvent(currentStock, eventType, quantity) {
     }
     case "reserve": {
       const amount = parsePositiveQuantity(quantity);
-      const available = stock.quantity - stock.reserved;
+      const available = getAvailableQuantity(stock);
       if (amount > available) {
         throw new StockMovementError("Cannot reserve more material than is available", { eventType, quantity: amount, available });
       }
@@ -46,10 +50,29 @@ export function applyStockEvent(currentStock, eventType, quantity) {
     }
     case "use": {
       const amount = parsePositiveQuantity(quantity);
-      if (amount > stock.quantity) {
-        throw new StockMovementError("Cannot use more material than is in stock", { eventType, quantity: amount, available: stock.quantity });
+      const available = getAvailableQuantity(stock);
+      if (amount > available) {
+        throw new StockMovementError("Cannot use more material than available stock", {
+          eventType,
+          requested: amount,
+          available,
+          quantity: stock.quantity,
+          reserved: stock.reserved
+        });
       }
       return { ...stock, quantity: stock.quantity - amount, used: stock.used + amount };
+    }
+    case "use_reserved": {
+      const amount = parsePositiveQuantity(quantity);
+      if (amount > stock.reserved) {
+        throw new StockMovementError("Cannot use more material than reserved stock", {
+          eventType,
+          requested: amount,
+          reserved: stock.reserved,
+          quantity: stock.quantity
+        });
+      }
+      return { ...stock, quantity: stock.quantity - amount, reserved: stock.reserved - amount, used: stock.used + amount };
     }
     case "adjust":
       return adjustStockQuantity(stock, quantity);
@@ -70,8 +93,15 @@ export function adjustStockQuantity(currentStock, quantity) {
 export function assertCanUseStock(currentStock, quantity, context = {}) {
   const stock = normalizeStock(currentStock);
   const amount = parsePositiveQuantity(quantity);
-  if (amount > stock.quantity) {
-    throw new StockMovementError("Cannot use more material than is in stock", { ...context, quantity: amount, available: stock.quantity });
+  const available = getAvailableQuantity(stock);
+  if (amount > available) {
+    throw new StockMovementError("Cannot use more material than available stock", {
+      ...context,
+      requested: amount,
+      available,
+      quantity: stock.quantity,
+      reserved: stock.reserved
+    });
   }
   return amount;
 }

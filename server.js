@@ -6,7 +6,8 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { createWorker } from "tesseract.js";
 import XLSX from "xlsx";
-import { applyStockEvent, assertCanUseStock, parseNonNegativeQuantity, parsePositiveQuantity, StockMovementError } from "./src/stockLogic.js";
+import { assertCanUseStock, parseNonNegativeQuantity, parsePositiveQuantity, StockMovementError } from "./src/stockLogic.js";
+import { applyStockEventToDatabase, listStockEvents, withAvailableStock } from "./src/stockRepository.js";
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -271,11 +272,11 @@ app.get("/api/health", (request, response) => {
 });
 
 app.get("/api/materials", (request, response) => {
-  response.json(buildTree(selectStock.all()));
+  response.json(buildTree(selectStock.all().map(withAvailableStock)));
 });
 
 app.get("/api/materials/flat", (request, response) => {
-  response.json(selectStock.all());
+  response.json(selectStock.all().map(withAvailableStock));
 });
 
 app.post("/api/materials", (request, response) => {
@@ -286,7 +287,7 @@ app.post("/api/materials", (request, response) => {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, payload.paren_id, payload.isfolder, payload.code, payload.name, payload.unit, payload.price, payload.thickness, payload.length, payload.width, id);
   db.prepare("INSERT OR IGNORE INTO stock (material_id) VALUES (?)").run(id);
-  response.status(201).json(selectStockById.get(id));
+  response.status(201).json(withAvailableStock(selectStockById.get(id)));
 });
 
 app.put("/api/materials/:id", (request, response) => {
@@ -298,7 +299,7 @@ app.put("/api/materials/:id", (request, response) => {
     SET paren_id = ?, isfolder = ?, code = ?, name = ?, unit = ?, price = ?, thickness = ?, length = ?, width = ?
     WHERE id = ?
   `).run(payload.paren_id, payload.isfolder, payload.code, payload.name, payload.unit, payload.price, payload.thickness, payload.length, payload.width, id);
-  response.json(selectStockById.get(id));
+  response.json(withAvailableStock(selectStockById.get(id)));
 });
 
 app.delete("/api/materials/:id", (request, response) => {
@@ -310,7 +311,7 @@ app.post("/api/stock/event", (request, response) => {
   const materialId = Number(request.body.material_id);
   const eventType = String(request.body.event_type || "");
   const note = String(request.body.note || "");
-  if (!materialId || !["receive", "reserve", "release", "use", "adjust"].includes(eventType)) {
+  if (!materialId || !["receive", "reserve", "release", "use", "use_reserved", "adjust"].includes(eventType)) {
     return response.status(400).json({ error: "Invalid stock event" });
   }
   if (!selectMaterial.get(materialId)) return response.status(404).json({ error: "Material not found" });
@@ -319,17 +320,25 @@ app.post("/api/stock/event", (request, response) => {
       ? parseNonNegativeQuantity(request.body.quantity)
       : parsePositiveQuantity(request.body.quantity);
     const updated = runInTransaction(() => {
-      db.prepare("INSERT OR IGNORE INTO stock (material_id) VALUES (?)").run(materialId);
-      const current = db.prepare("SELECT * FROM stock WHERE material_id = ?").get(materialId);
-      const next = applyStockEvent(current, eventType, quantity);
-      db.prepare("UPDATE stock SET quantity = ?, reserved = ?, used = ? WHERE material_id = ?").run(next.quantity, next.reserved, next.used, materialId);
-      db.prepare("INSERT INTO stock_events (material_id, event_type, quantity, note) VALUES (?, ?, ?, ?)").run(materialId, eventType, quantity, note);
-      return selectStockById.get(materialId);
+      applyStockEventToDatabase(db, { materialId, eventType, quantity, note });
+      return withAvailableStock(selectStockById.get(materialId));
     });
     response.json(updated);
   } catch (error) {
     if (error instanceof StockMovementError) return response.status(400).json({ error: error.message, details: error.details });
     throw error;
+  }
+});
+
+app.get("/api/stock/:materialId/events", (request, response) => {
+  const materialId = Number(request.params.materialId);
+  if (!materialId) return response.status(400).json({ error: "Invalid material id" });
+  if (!selectMaterial.get(materialId)) return response.status(404).json({ error: "Material not found" });
+  try {
+    response.json(listStockEvents(db, materialId));
+  } catch (error) {
+    console.error(error);
+    response.status(500).json({ error: "Could not load stock history" });
   }
 });
 

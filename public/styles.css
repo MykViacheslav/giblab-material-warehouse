@@ -218,6 +218,17 @@ button.secondary:hover,
   margin: 0;
 }
 
+.stock-history-panel {
+  margin-top: 10px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.stock-history-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
 .tabs {
   border-bottom: 1px solid var(--line);
   display: flex;
