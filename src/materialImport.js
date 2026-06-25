@@ -20,6 +20,7 @@ export const MATERIAL_IMPORT_FIELDS = [
 ];
 
 export const MATERIAL_IMPORT_MODES = new Set(["add_new", "update_existing", "upsert", "skip_duplicates"]);
+export const MATERIAL_IMPORT_FILTERS = new Set(["all", "valid", "invalid", "new", "existing", "duplicate", "warning", "selected"]);
 
 const HEADER_ALIASES = new Map([
   ["code", "code"],
@@ -126,6 +127,7 @@ export function previewMaterialImport(rawRows, existingMaterials = []) {
 
     row.valid = row.errors.length === 0;
     row.status = statusForPreviewRow(row);
+    row.selected = row.valid;
   }
 
   return {
@@ -137,7 +139,12 @@ export function previewMaterialImport(rawRows, existingMaterials = []) {
 export function commitMaterialImport(db, rows, mode = "upsert", options = {}) {
   if (!MATERIAL_IMPORT_MODES.has(mode)) throw new Error(`Unsupported import mode: ${mode}`);
   const existingRows = options.existingMaterials || db.prepare("SELECT * FROM materials").all();
-  const preview = previewMaterialImport(rows.map((row) => row.material || row), existingRows);
+  const incomingRows = rows.map((row) => ({
+    selected: row.selected !== false,
+    material: row.material || row
+  }));
+  const skippedUnselected = incomingRows.filter((row) => !row.selected).length;
+  const preview = previewMaterialImport(incomingRows.filter((row) => row.selected).map((row) => row.material), existingRows);
   const insert = db.prepare(`
     INSERT INTO materials (
       id, paren_id, isfolder, code, name, unit, price, thickness, length, width,
@@ -201,7 +208,9 @@ export function commitMaterialImport(db, rows, mode = "upsert", options = {}) {
     updated,
     skipped,
     errors,
-    total: preview.rows.length
+    total: incomingRows.length,
+    selected: incomingRows.length - skippedUnselected,
+    skipped_unselected: skippedUnselected
   };
 }
 
@@ -256,7 +265,39 @@ export function normalizeImportRow(rawRow = {}, rowNumber = 1) {
     duplicate_key: "",
     duplicate_key_type: "",
     file_duplicate: false,
+    selected: false,
     hasContent: Object.values(original).some((value) => textValue(value) !== "")
+  };
+}
+
+export function filterMaterialImportRows(rows = [], filter = "all") {
+  const normalizedFilter = MATERIAL_IMPORT_FILTERS.has(filter) ? filter : "all";
+  if (normalizedFilter === "all") return rows;
+  return rows.filter((row) => {
+    if (normalizedFilter === "valid") return row.valid;
+    if (normalizedFilter === "invalid") return !row.valid;
+    if (normalizedFilter === "new") return row.status === "new";
+    if (normalizedFilter === "existing") return row.status === "existing";
+    if (normalizedFilter === "duplicate") return row.status === "duplicate" || row.file_duplicate;
+    if (normalizedFilter === "warning") return row.status === "warning" || Boolean(row.warnings?.length);
+    if (normalizedFilter === "selected") return Boolean(row.selected);
+    return true;
+  });
+}
+
+export function summarizeMaterialImportSelection(rows = [], visibleRows = rows) {
+  const selectedRows = rows.filter((row) => row.selected && row.valid);
+  return {
+    total: rows.length,
+    visible: visibleRows.length,
+    selected: selectedRows.length,
+    valid: rows.filter((row) => row.valid).length,
+    invalid: rows.filter((row) => !row.valid).length,
+    new: rows.filter((row) => row.status === "new").length,
+    existing: rows.filter((row) => row.status === "existing").length,
+    duplicates: rows.filter((row) => row.status === "duplicate" || row.file_duplicate).length,
+    warnings: rows.filter((row) => row.status === "warning" || Boolean(row.warnings?.length)).length,
+    skipped_unselected: rows.filter((row) => row.valid && !row.selected).length
   };
 }
 

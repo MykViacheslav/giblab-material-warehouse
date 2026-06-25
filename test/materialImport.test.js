@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import {
   commitMaterialImport,
+  filterMaterialImportRows,
   normalizeImportRow,
   parseImportNumber,
-  previewMaterialImport
+  previewMaterialImport,
+  summarizeMaterialImportSelection
 } from "../src/materialImport.js";
 
 test("parse Polish numeric format", () => {
@@ -95,6 +97,93 @@ test("detect duplicate by code fallback", () => {
   );
   assert.equal(preview.rows[0].status, "existing");
   assert.equal(preview.rows[0].existing_id, 8);
+});
+
+test("valid rows are selected by default", () => {
+  const preview = previewMaterialImport([{ code: "A", name: "Material" }]);
+  assert.equal(preview.rows[0].valid, true);
+  assert.equal(preview.rows[0].selected, true);
+});
+
+test("invalid rows are not selected by default", () => {
+  const preview = previewMaterialImport([{ code: "", name: "Material" }]);
+  assert.equal(preview.rows[0].valid, false);
+  assert.equal(preview.rows[0].selected, false);
+});
+
+test("commit ignores unselected rows", () => {
+  const db = createImportDb();
+  const result = commitMaterialImport(db, [
+    { selected: true, material: { code: "YES", name: "Selected" } },
+    { selected: false, material: { code: "NO", name: "Unselected" } }
+  ], "upsert");
+  assert.equal(result.added, 1);
+  assert.equal(result.skipped_unselected, 1);
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM materials WHERE code = 'NO'").get().count, 0);
+});
+
+test("commit ignores invalid selected rows", () => {
+  const db = createImportDb();
+  const result = commitMaterialImport(db, [
+    { selected: true, material: { code: "", name: "Invalid" } }
+  ], "upsert");
+  assert.equal(result.added, 0);
+  assert.equal(result.skipped, 1);
+  assert.equal(result.errors.length, 1);
+});
+
+test("skipped unselected rows are counted", () => {
+  const db = createImportDb();
+  const result = commitMaterialImport(db, [
+    { selected: false, material: { code: "A", name: "A" } },
+    { selected: false, material: { code: "B", name: "B" } },
+    { selected: true, material: { code: "C", name: "C" } }
+  ], "upsert");
+  assert.equal(result.skipped_unselected, 2);
+  assert.equal(result.added, 1);
+});
+
+test("filter valid returns only valid rows", () => {
+  const rows = previewMaterialImport([{ code: "A", name: "A" }, { name: "Bad" }]).rows;
+  assert.deepEqual(filterMaterialImportRows(rows, "valid").map((row) => row.row_number), [1]);
+});
+
+test("filter invalid returns only invalid rows", () => {
+  const rows = previewMaterialImport([{ code: "A", name: "A" }, { name: "Bad" }]).rows;
+  assert.deepEqual(filterMaterialImportRows(rows, "invalid").map((row) => row.row_number), [2]);
+});
+
+test("filter new returns only new rows", () => {
+  const rows = previewMaterialImport([{ code: "A", name: "A" }]).rows;
+  assert.equal(filterMaterialImportRows(rows, "new").length, 1);
+});
+
+test("filter existing returns only existing rows", () => {
+  const rows = previewMaterialImport([{ code: "A", name: "A" }], [{ id: 1, code: "A", name: "Old" }]).rows;
+  assert.equal(filterMaterialImportRows(rows, "existing").length, 1);
+});
+
+test("filter duplicate returns duplicate rows", () => {
+  const rows = previewMaterialImport([{ code: "A", name: "A" }, { code: "A", name: "A copy" }]).rows;
+  assert.equal(filterMaterialImportRows(rows, "duplicate").length, 1);
+});
+
+test("filter warning returns rows with warnings", () => {
+  const rows = previewMaterialImport([{ decor_code: "U216", decor_name: "Kaszmir" }]).rows;
+  assert.equal(filterMaterialImportRows(rows, "warning").length, 1);
+});
+
+test("selected rows summary is calculated correctly", () => {
+  const rows = previewMaterialImport([{ code: "A", name: "A" }, { code: "B", name: "B" }, { name: "Bad" }]).rows;
+  rows[1].selected = false;
+  const visibleRows = filterMaterialImportRows(rows, "valid");
+  const summary = summarizeMaterialImportSelection(rows, visibleRows);
+  assert.equal(summary.total, 3);
+  assert.equal(summary.visible, 2);
+  assert.equal(summary.selected, 1);
+  assert.equal(summary.valid, 2);
+  assert.equal(summary.invalid, 1);
+  assert.equal(summary.skipped_unselected, 1);
 });
 
 test("upsert inserts new row", () => {

@@ -200,40 +200,6 @@
             <textarea id="notifyText" readonly placeholder="Kliknij zamówienie, aby przygotować wiadomość do klienta."></textarea>
           </div>
 
-          <section class="panel compact-panel">
-            <h3>Import katalogu materialow</h3>
-            <div class="toolbar">
-              <input id="materialImportFile" type="file" accept=".xlsx,.xls,.csv">
-              <select id="materialImportMode">
-                <option value="add_new">Dodaj nowe</option>
-                <option value="update_existing">Aktualizuj istniejace</option>
-                <option value="upsert" selected>Dodaj i aktualizuj</option>
-                <option value="skip_duplicates">Pomin duplikaty</option>
-              </select>
-              <button id="materialImportPreviewBtn" type="button">Podglad importu</button>
-              <button id="materialImportCommitBtn" type="button">Zatwierdz import</button>
-            </div>
-            <p id="materialImportSummary" class="hint">Import aktualizuje tylko katalog materialow. Stany magazynowe i historia stanow nie sa zmieniane.</p>
-            <div class="table-wrap compact-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Wiersz</th>
-                    <th>Status</th>
-                    <th>Kod</th>
-                    <th>Nazwa</th>
-                    <th>Producent</th>
-                    <th>Dekor</th>
-                    <th>Str.</th>
-                    <th>G</th>
-                    <th>Uwagi</th>
-                  </tr>
-                </thead>
-                <tbody id="materialImportPreviewBody"></tbody>
-              </table>
-            </div>
-          </section>
-
           <div class="table-wrap">
             <table>
               <thead>
@@ -525,6 +491,53 @@
             <button type="submit">Zapisz pozycję</button>
             <button id="clearFormBtn" type="button">Wyczyść</button>
           </form>
+
+          <section class="panel compact-panel">
+            <h3>Import katalogu materiałów</h3>
+            <div class="toolbar">
+              <input id="materialImportFile" type="file" accept=".xlsx,.xls,.csv">
+              <select id="materialImportMode">
+                <option value="add_new">Dodaj nowe</option>
+                <option value="update_existing">Aktualizuj istniejące</option>
+                <option value="upsert" selected>Dodaj i aktualizuj</option>
+                <option value="skip_duplicates">Pomiń duplikaty</option>
+              </select>
+              <select id="materialImportFilter">
+                <option value="all">Wszystkie</option>
+                <option value="valid">Poprawne</option>
+                <option value="invalid">Błędne</option>
+                <option value="new">Nowe</option>
+                <option value="existing">Istniejące</option>
+                <option value="duplicate">Duplikaty</option>
+                <option value="warning">Ostrzeżenia</option>
+                <option value="selected">Zaznaczone</option>
+              </select>
+              <button id="materialImportPreviewBtn" type="button">Podgląd importu</button>
+              <button id="materialImportCommitBtn" type="button">Zatwierdź import</button>
+              <button id="materialImportSelectValidBtn" type="button">Zaznacz poprawne</button>
+              <button id="materialImportClearSelectionBtn" type="button">Odznacz wszystko</button>
+            </div>
+            <p id="materialImportSummary" class="hint">Import aktualizuje tylko katalog materiałów. Stany magazynowe i historia stanów nie są zmieniane.</p>
+            <div class="table-wrap compact-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Import</th>
+                    <th>Wiersz</th>
+                    <th>Status</th>
+                    <th>Kod</th>
+                    <th>Nazwa</th>
+                    <th>Producent</th>
+                    <th>Dekor</th>
+                    <th>Str.</th>
+                    <th>G</th>
+                    <th>Uwagi</th>
+                  </tr>
+                </thead>
+                <tbody id="materialImportPreviewBody"></tbody>
+              </table>
+            </div>
+          </section>
 
           <div class="table-wrap">
             <table>

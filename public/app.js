@@ -38,8 +38,11 @@ const elements = {
   materialForm: document.querySelector("#materialForm"),
   materialImportFile: document.querySelector("#materialImportFile"),
   materialImportMode: document.querySelector("#materialImportMode"),
+  materialImportFilter: document.querySelector("#materialImportFilter"),
   materialImportPreviewBtn: document.querySelector("#materialImportPreviewBtn"),
   materialImportCommitBtn: document.querySelector("#materialImportCommitBtn"),
+  materialImportSelectValidBtn: document.querySelector("#materialImportSelectValidBtn"),
+  materialImportClearSelectionBtn: document.querySelector("#materialImportClearSelectionBtn"),
   materialImportSummary: document.querySelector("#materialImportSummary"),
   materialImportPreviewBody: document.querySelector("#materialImportPreviewBody"),
   stockForm: document.querySelector("#stockForm"),
@@ -431,6 +434,19 @@ elements.materialForm.addEventListener("submit", async (event) => {
 
 elements.materialImportPreviewBtn?.addEventListener("click", previewMaterialCatalogImport);
 elements.materialImportCommitBtn?.addEventListener("click", commitMaterialCatalogImport);
+elements.materialImportFilter?.addEventListener("change", renderMaterialImportPreview);
+elements.materialImportSelectValidBtn?.addEventListener("click", () => {
+  state.materialImportRows.forEach((row) => {
+    row.selected = Boolean(row.valid);
+  });
+  renderMaterialImportPreview();
+});
+elements.materialImportClearSelectionBtn?.addEventListener("click", () => {
+  state.materialImportRows.forEach((row) => {
+    row.selected = false;
+  });
+  renderMaterialImportPreview();
+});
 
 elements.stockForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -661,11 +677,13 @@ function renderStock() {
 
 function renderMaterialImportPreview() {
   if (!elements.materialImportPreviewBody) return;
-  elements.materialImportPreviewBody.innerHTML = state.materialImportRows.map((row) => {
+  const visibleRows = filterMaterialImportRows(state.materialImportRows, elements.materialImportFilter?.value || "all");
+  elements.materialImportPreviewBody.innerHTML = visibleRows.map((row) => {
     const material = row.material || {};
     const messages = [...(row.errors || []), ...(row.warnings || [])].join(" ");
     return `
       <tr>
+        <td><input type="checkbox" data-import-row="${row.row_number}" ${row.selected ? "checked" : ""} ${row.valid ? "" : "disabled"}></td>
         <td>${row.row_number}</td>
         <td>${escapeHtml(row.status)}</td>
         <td>${escapeHtml(material.code || "")}</td>
@@ -678,21 +696,33 @@ function renderMaterialImportPreview() {
       </tr>
     `;
   }).join("");
+  elements.materialImportPreviewBody.querySelectorAll("[data-import-row]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const row = state.materialImportRows.find((item) => String(item.row_number) === input.dataset.importRow);
+      if (row && row.valid) row.selected = input.checked;
+      renderMaterialImportSummary();
+    });
+  });
+  renderMaterialImportSummary(null, null, visibleRows);
 }
 
-function renderMaterialImportSummary(summary, result) {
+function renderMaterialImportSummary(summary, result, visibleRows = null) {
   if (!elements.materialImportSummary) return;
   if (result) {
     elements.materialImportSummary.textContent =
-      `Import: dodano ${result.added}, zaktualizowano ${result.updated}, pominieto ${result.skipped}, bledy ${result.errors?.length || 0}.`;
+      `Import: dodano ${result.added}, zaktualizowano ${result.updated}, pominięto ${result.skipped}, niezaznaczone ${result.skipped_unselected || 0}, błędy ${result.errors?.length || 0}.`;
     return;
   }
-  if (!summary) {
-    elements.materialImportSummary.textContent = "Import aktualizuje tylko katalog materialow. Stany magazynowe i historia stanow nie sa zmieniane.";
+  const activeRows = state.materialImportRows || [];
+  if (!summary && activeRows.length) {
+    summary = summarizeMaterialImportRows(activeRows, visibleRows || filterMaterialImportRows(activeRows, elements.materialImportFilter?.value || "all"));
+  }
+  if (!summary || !summary.total) {
+    elements.materialImportSummary.textContent = "Import aktualizuje tylko katalog materiałów. Stany magazynowe i historia stanów nie są zmieniane.";
     return;
   }
   elements.materialImportSummary.textContent =
-    `Razem ${summary.total}, poprawne ${summary.valid}, bledne ${summary.invalid}, nowe ${summary.new}, istniejace ${summary.existing}, duplikaty ${summary.duplicates}, ostrzezenia ${summary.warnings}.`;
+    `Razem ${summary.total}, widoczne ${summary.visible ?? summary.total}, zaznaczone ${summary.selected || 0}, poprawne ${summary.valid}, błędne ${summary.invalid}, nowe ${summary.new}, istniejące ${summary.existing}, duplikaty ${summary.duplicates}, ostrzeżenia ${summary.warnings}.`;
 }
 
 async function previewMaterialCatalogImport() {
@@ -701,14 +731,18 @@ async function previewMaterialCatalogImport() {
   const form = new FormData();
   form.append("catalog", file);
   const result = await fetchJson("/api/materials/import-preview", { method: "POST", body: form });
-  state.materialImportRows = result.rows || [];
-  renderMaterialImportSummary(result.summary);
+  state.materialImportRows = (result.rows || []).map((row) => ({ ...row, selected: Boolean(row.valid) }));
   renderMaterialImportPreview();
-  showToast(`Podglad importu: ${result.summary?.total || 0} wierszy`);
+  showToast(`Podgląd importu: ${result.summary?.total || 0} wierszy`);
 }
 
 async function commitMaterialCatalogImport() {
-  const rows = state.materialImportRows.filter((row) => row.valid).map((row) => row.material);
+  const rows = state.materialImportRows.map((row) => ({
+    selected: Boolean(row.selected),
+    material: row.material
+  }));
+  const selectedValidRows = state.materialImportRows.filter((row) => row.valid && row.selected);
+  if (!selectedValidRows.length) return showToast("Brak zaznaczonych poprawnych wierszy do importu");
   if (!rows.length) return showToast("Brak poprawnych wierszy do importu");
   const result = await postJson("/api/materials/import-commit", {
     mode: elements.materialImportMode?.value || "upsert",
@@ -717,6 +751,31 @@ async function commitMaterialCatalogImport() {
   renderMaterialImportSummary(null, result);
   await refreshAll();
   showToast(`Import zapisany: ${result.added} dodano, ${result.updated} zaktualizowano`);
+}
+
+function filterMaterialImportRows(rows, filter) {
+  if (filter === "valid") return rows.filter((row) => row.valid);
+  if (filter === "invalid") return rows.filter((row) => !row.valid);
+  if (filter === "new") return rows.filter((row) => row.status === "new");
+  if (filter === "existing") return rows.filter((row) => row.status === "existing");
+  if (filter === "duplicate") return rows.filter((row) => row.status === "duplicate" || row.file_duplicate);
+  if (filter === "warning") return rows.filter((row) => row.status === "warning" || row.warnings?.length);
+  if (filter === "selected") return rows.filter((row) => row.selected);
+  return rows;
+}
+
+function summarizeMaterialImportRows(rows, visibleRows = rows) {
+  return {
+    total: rows.length,
+    visible: visibleRows.length,
+    selected: rows.filter((row) => row.valid && row.selected).length,
+    valid: rows.filter((row) => row.valid).length,
+    invalid: rows.filter((row) => !row.valid).length,
+    new: rows.filter((row) => row.status === "new").length,
+    existing: rows.filter((row) => row.status === "existing").length,
+    duplicates: rows.filter((row) => row.status === "duplicate" || row.file_duplicate).length,
+    warnings: rows.filter((row) => row.status === "warning" || row.warnings?.length).length
+  };
 }
 
 async function showStockHistory(materialId) {

@@ -138,6 +138,12 @@ The import updates only material catalog data.
 
 It does not change warehouse stock quantities and does not create stock events.
 
+Import preview allows selecting only specific valid rows before committing the import.
+
+Invalid rows are never imported.
+
+Material catalog import does not change stock quantities and does not create stock events.
+
 Import modes:
 
 - add new
