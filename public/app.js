@@ -11,6 +11,8 @@ const state = {
   cutQuoteLines: [],
   deliveries: [],
   deliveryLines: [],
+  deliveryCorrections: [],
+  deliveryCorrectionLines: [],
   materialImportRows: [],
   selectedId: null,
   selectedCustomerId: null,
@@ -18,6 +20,7 @@ const state = {
   selectedSupplyId: null,
   selectedCutJobId: null,
   selectedDeliveryId: null,
+  selectedDeliveryCorrectionId: null,
   collapsed: new Set()
 };
 
@@ -56,6 +59,13 @@ const elements = {
   deliveryStatus: document.querySelector("#deliveryStatus"),
   newDeliveryBtn: document.querySelector("#newDeliveryBtn"),
   postDeliveryBtn: document.querySelector("#postDeliveryBtn"),
+  deliveryCorrectionForm: document.querySelector("#deliveryCorrectionForm"),
+  deliveryCorrectionLineForm: document.querySelector("#deliveryCorrectionLineForm"),
+  deliveryCorrectionsBody: document.querySelector("#deliveryCorrectionsBody"),
+  deliveryCorrectionLinesBody: document.querySelector("#deliveryCorrectionLinesBody"),
+  deliveryCorrectionStatus: document.querySelector("#deliveryCorrectionStatus"),
+  newDeliveryCorrectionBtn: document.querySelector("#newDeliveryCorrectionBtn"),
+  postDeliveryCorrectionBtn: document.querySelector("#postDeliveryCorrectionBtn"),
   offcutForm: document.querySelector("#offcutForm"),
   supplyForm: document.querySelector("#supplyForm"),
   suppliesBody: document.querySelector("#suppliesBody"),
@@ -499,6 +509,45 @@ elements.postDeliveryBtn?.addEventListener("click", async () => {
   showToast("Dostawa zaksięgowana");
 });
 
+elements.deliveryCorrectionForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const payload = formPayload(elements.deliveryCorrectionForm);
+  let saved;
+  if (state.selectedDeliveryCorrectionId) {
+    saved = await postJson(`/api/delivery-corrections/${state.selectedDeliveryCorrectionId}`, payload, "PUT");
+  } else {
+    const delivery = currentDelivery();
+    if (!delivery) return showToast("Najpierw wybierz zaksięgowaną dostawę");
+    if (delivery.status !== "posted") return showToast("Korektę można zrobić tylko do zaksięgowanej dostawy");
+    saved = await postJson(`/api/deliveries/${delivery.id}/corrections`, payload);
+  }
+  state.selectedDeliveryCorrectionId = saved.id;
+  await refreshDeliveries();
+  await loadDeliveryCorrectionLines(saved.id);
+  showToast("Korekta zapisana");
+});
+
+elements.deliveryCorrectionLineForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!state.selectedDeliveryCorrectionId) return showToast("Najpierw zapisz albo wybierz korektę");
+  await postJson(`/api/delivery-corrections/${state.selectedDeliveryCorrectionId}/lines`, formPayload(elements.deliveryCorrectionLineForm));
+  elements.deliveryCorrectionLineForm.reset();
+  await refreshDeliveries();
+  await loadDeliveryCorrectionLines(state.selectedDeliveryCorrectionId);
+  showToast("Pozycja korekty dodana");
+});
+
+elements.newDeliveryCorrectionBtn?.addEventListener("click", resetDeliveryCorrectionForm);
+
+elements.postDeliveryCorrectionBtn?.addEventListener("click", async () => {
+  if (!state.selectedDeliveryCorrectionId) return showToast("Najpierw wybierz korektę");
+  const result = await postJson(`/api/delivery-corrections/${state.selectedDeliveryCorrectionId}/post`, {});
+  await refreshAll();
+  state.selectedDeliveryCorrectionId = result.id;
+  await loadDeliveryCorrectionLines(result.id);
+  showToast("Korekta zaksięgowana");
+});
+
 elements.offcutForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   await postJson("/api/offcuts", formPayload(elements.offcutForm));
@@ -598,15 +647,27 @@ async function refreshSupplies() {
 
 async function refreshDeliveries() {
   if (!elements.deliveriesBody) return;
-  state.deliveries = await fetchJson("/api/deliveries");
+  const [deliveries, corrections] = await Promise.all([
+    fetchJson("/api/deliveries"),
+    fetchJson("/api/delivery-corrections")
+  ]);
+  state.deliveries = deliveries;
+  state.deliveryCorrections = corrections;
   renderDeliveryMaterialSelect();
   renderDeliveries();
+  renderDeliveryCorrections();
   if (state.selectedDeliveryId) await loadDeliveryLines(state.selectedDeliveryId);
+  if (state.selectedDeliveryCorrectionId) await loadDeliveryCorrectionLines(state.selectedDeliveryCorrectionId);
 }
 
 async function loadDeliveryLines(deliveryId) {
   state.deliveryLines = await fetchJson(`/api/deliveries/${deliveryId}/lines`);
   renderDeliveryLines();
+}
+
+async function loadDeliveryCorrectionLines(correctionId) {
+  state.deliveryCorrectionLines = await fetchJson(`/api/delivery-corrections/${correctionId}/lines`);
+  renderDeliveryCorrectionLines();
 }
 
 async function loadQuoteLines(orderId) {
@@ -992,13 +1053,22 @@ function renderSupplies() {
 
 function renderDeliveryMaterialSelect() {
   const select = elements.deliveryLineForm?.elements.material_id;
-  if (!select) return;
-  const currentValue = select.value;
+  const correctionSelect = elements.deliveryCorrectionLineForm?.elements.material_id;
+  if (!select && !correctionSelect) return;
+  const currentValue = select?.value || "";
+  const correctionValue = correctionSelect?.value || "";
   const materials = state.flat.filter((row) => !row.isfolder);
-  select.innerHTML = `<option value="">Wybierz materiał</option>` + materials.map((material) => `
+  const options = `<option value="">Wybierz materiał</option>` + materials.map((material) => `
     <option value="${material.id}">${escapeHtml([material.code, material.name].filter(Boolean).join(" - "))}</option>
   `).join("");
-  if (materials.some((material) => String(material.id) === currentValue)) select.value = currentValue;
+  if (select) {
+    select.innerHTML = options;
+    if (materials.some((material) => String(material.id) === currentValue)) select.value = currentValue;
+  }
+  if (correctionSelect) {
+    correctionSelect.innerHTML = options;
+    if (materials.some((material) => String(material.id) === correctionValue)) correctionSelect.value = correctionValue;
+  }
 }
 
 function renderDeliveries() {
@@ -1043,6 +1113,46 @@ function renderDeliveryLines() {
   updateDeliveryStatusText();
 }
 
+function renderDeliveryCorrections() {
+  if (!elements.deliveryCorrectionsBody) return;
+  elements.deliveryCorrectionsBody.innerHTML = state.deliveryCorrections.map((row) => `
+    <tr class="material-row ${String(row.id) === String(state.selectedDeliveryCorrectionId) ? "selected-row" : ""}" data-id="${row.id}">
+      <td>${row.id}</td>
+      <td>${escapeHtml(row.original_document_number || row.original_delivery_id || "")}</td>
+      <td>${escapeHtml(row.correction_number || "")}</td>
+      <td>${escapeHtml(row.reason || "")}</td>
+      <td>${escapeHtml(row.status || "")}</td>
+      <td>${formatNumber(row.total_quantity_delta)}</td>
+    </tr>
+  `).join("");
+  elements.deliveryCorrectionsBody.querySelectorAll("tr").forEach((rowElement) => {
+    rowElement.addEventListener("click", () => selectDeliveryCorrection(Number(rowElement.dataset.id)));
+  });
+}
+
+function renderDeliveryCorrectionLines() {
+  if (!elements.deliveryCorrectionLinesBody) return;
+  const correction = currentDeliveryCorrection();
+  elements.deliveryCorrectionLinesBody.innerHTML = state.deliveryCorrectionLines.map((row) => `
+    <tr>
+      <td>${row.id}</td>
+      <td>${escapeHtml(row.material_code || "")}</td>
+      <td>${escapeHtml(row.material_name || "")}</td>
+      <td>${formatNumber(row.quantity_delta)}</td>
+      <td>${formatMoney(row.unit_price_net)}</td>
+      <td>${correction?.status === "draft" ? `<button class="small danger" data-delete-correction-line="${row.id}" type="button">Usuń</button>` : ""}</td>
+    </tr>
+  `).join("");
+  elements.deliveryCorrectionLinesBody.querySelectorAll("[data-delete-correction-line]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await fetchJson(`/api/delivery-correction-lines/${button.dataset.deleteCorrectionLine}`, { method: "DELETE" });
+      await refreshDeliveries();
+      showToast("Pozycja korekty usunięta");
+    });
+  });
+  updateDeliveryCorrectionStatusText();
+}
+
 function selectDelivery(id) {
   const delivery = state.deliveries.find((row) => row.id === id);
   if (!delivery) return;
@@ -1056,8 +1166,25 @@ function selectDelivery(id) {
   updateDeliveryStatusText();
 }
 
+function selectDeliveryCorrection(id) {
+  const correction = state.deliveryCorrections.find((row) => row.id === id);
+  if (!correction) return;
+  state.selectedDeliveryCorrectionId = id;
+  for (const field of elements.deliveryCorrectionForm.elements) {
+    if (!field.name) continue;
+    field.value = correction[field.name] ?? "";
+  }
+  loadDeliveryCorrectionLines(id);
+  renderDeliveryCorrections();
+  updateDeliveryCorrectionStatusText();
+}
+
 function currentDelivery() {
   return state.deliveries.find((row) => String(row.id) === String(state.selectedDeliveryId));
+}
+
+function currentDeliveryCorrection() {
+  return state.deliveryCorrections.find((row) => String(row.id) === String(state.selectedDeliveryCorrectionId));
 }
 
 function resetDeliveryForm() {
@@ -1071,6 +1198,16 @@ function resetDeliveryForm() {
   updateDeliveryStatusText();
 }
 
+function resetDeliveryCorrectionForm() {
+  state.selectedDeliveryCorrectionId = null;
+  state.deliveryCorrectionLines = [];
+  elements.deliveryCorrectionForm?.reset();
+  elements.deliveryCorrectionLineForm?.reset();
+  renderDeliveryCorrections();
+  renderDeliveryCorrectionLines();
+  updateDeliveryCorrectionStatusText();
+}
+
 function updateDeliveryStatusText() {
   if (!elements.deliveryStatus) return;
   const delivery = currentDelivery();
@@ -1081,6 +1218,18 @@ function updateDeliveryStatusText() {
   elements.deliveryStatus.textContent = delivery.status === "posted"
     ? `Dostawa ${delivery.id} jest zaksięgowana. Stany zostały zwiększone, a historia magazynu zapisana.`
     : `Dostawa ${delivery.id} jest szkicem. Stan rośnie dopiero po kliknięciu „Zaksięguj dostawę”.`;
+}
+
+function updateDeliveryCorrectionStatusText() {
+  if (!elements.deliveryCorrectionStatus) return;
+  const correction = currentDeliveryCorrection();
+  if (!correction) {
+    elements.deliveryCorrectionStatus.textContent = "Wybierz zaksięgowaną dostawę i utwórz korektę. Szkic korekty nie zmienia magazynu.";
+    return;
+  }
+  elements.deliveryCorrectionStatus.textContent = correction.status === "posted"
+    ? `Korekta ${correction.id} jest zaksięgowana. Historia magazynu została zapisana.`
+    : `Korekta ${correction.id} jest szkicem. Ujemna delta zużyje tylko dostępny stan, bez naruszania rezerwacji.`;
 }
 
 function renderQuoteLines() {

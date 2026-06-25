@@ -10,7 +10,15 @@ import { assertCanUseStock, parseNonNegativeQuantity, parsePositiveQuantity, Sto
 import { applyStockEventToDatabase, listStockEvents, withAvailableStock } from "./src/stockRepository.js";
 import { MATERIAL_CATALOG_COLUMNS, MATERIAL_CATALOG_FIELD_NAMES, normalizeMaterialCatalogFields } from "./src/materialCatalog.js";
 import { commitMaterialImport, previewMaterialImport } from "./src/materialImport.js";
-import { DeliveryError, normalizeDelivery, normalizeDeliveryLine, postDeliveryToDatabase } from "./src/deliveryLogic.js";
+import {
+  DeliveryError,
+  normalizeDelivery,
+  normalizeDeliveryCorrection,
+  normalizeDeliveryCorrectionLine,
+  normalizeDeliveryLine,
+  postDeliveryCorrectionToDatabase,
+  postDeliveryToDatabase
+} from "./src/deliveryLogic.js";
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -173,6 +181,30 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS delivery_corrections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    original_delivery_id INTEGER NOT NULL REFERENCES deliveries(id),
+    correction_number TEXT DEFAULT '',
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft',
+    note TEXT DEFAULT '',
+    total_net_delta REAL DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    posted_at TEXT DEFAULT '',
+    cancelled_at TEXT DEFAULT ''
+  );
+
+  CREATE TABLE IF NOT EXISTS delivery_correction_lines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    correction_id INTEGER NOT NULL REFERENCES delivery_corrections(id) ON DELETE CASCADE,
+    material_id INTEGER NOT NULL REFERENCES materials(id),
+    quantity_delta REAL NOT NULL,
+    unit_price_net REAL DEFAULT 0,
+    line_total_net_delta REAL DEFAULT 0,
+    note TEXT DEFAULT '',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS quote_lines (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
@@ -284,6 +316,26 @@ const selectDeliveries = db.prepare(`
 `);
 const selectDelivery = db.prepare("SELECT * FROM deliveries WHERE id = ?");
 const selectDeliveryLines = db.prepare("SELECT * FROM delivery_lines WHERE delivery_id = ? ORDER BY id");
+const selectDeliveryCorrections = db.prepare(`
+  SELECT c.*,
+         d.document_number AS original_document_number,
+         d.supplier AS original_supplier,
+         COUNT(l.id) AS line_count,
+         COALESCE(SUM(l.quantity_delta), 0) AS total_quantity_delta
+  FROM delivery_corrections c
+  LEFT JOIN deliveries d ON d.id = c.original_delivery_id
+  LEFT JOIN delivery_correction_lines l ON l.correction_id = c.id
+  GROUP BY c.id
+  ORDER BY c.created_at DESC, c.id DESC
+`);
+const selectDeliveryCorrection = db.prepare("SELECT * FROM delivery_corrections WHERE id = ?");
+const selectDeliveryCorrectionLines = db.prepare(`
+  SELECT l.*, m.code AS material_code, m.name AS material_name
+  FROM delivery_correction_lines l
+  LEFT JOIN materials m ON m.id = l.material_id
+  WHERE l.correction_id = ?
+  ORDER BY l.id
+`);
 const selectOrders = db.prepare(`
   SELECT o.*, c.name AS customer_name, COALESCE(SUM(p.amount), 0) AS paid_amount,
          o.total_amount - COALESCE(SUM(p.amount), 0) AS balance
@@ -719,6 +771,12 @@ app.delete("/api/deliveries/:id", (request, response) => {
   response.status(204).end();
 });
 
+app.post("/api/deliveries/:id/cancel", (request, response) => {
+  const delivery = selectDelivery.get(Number(request.params.id));
+  if (!delivery) return response.status(404).json({ error: "Delivery not found" });
+  return response.status(400).json({ error: "Posted deliveries cannot be cancelled directly. Create a delivery correction instead." });
+});
+
 app.get("/api/deliveries/:id/lines", (request, response) => {
   const id = Number(request.params.id);
   if (!selectDelivery.get(id)) return response.status(404).json({ error: "Delivery not found" });
@@ -770,6 +828,92 @@ app.post("/api/deliveries/:id/post", (request, response) => {
     response.json({
       ...delivery,
       lines: selectDeliveryLines.all(id),
+      stock: selectStock.all().map(withAvailableStock)
+    });
+  } catch (error) {
+    if (error instanceof DeliveryError || error instanceof StockMovementError) {
+      return response.status(400).json({ error: error.message, details: error.details });
+    }
+    throw error;
+  }
+});
+
+app.get("/api/delivery-corrections", (request, response) => {
+  response.json(selectDeliveryCorrections.all());
+});
+
+app.post("/api/deliveries/:id/corrections", (request, response) => {
+  const deliveryId = Number(request.params.id);
+  const delivery = selectDelivery.get(deliveryId);
+  if (!delivery) return response.status(404).json({ error: "Delivery not found" });
+  if (delivery.status !== "posted") return response.status(400).json({ error: "Only posted deliveries can be corrected" });
+  const payload = normalizeDeliveryCorrection(request.body);
+  if (!payload.reason) return response.status(400).json({ error: "Correction reason is required" });
+  const result = db.prepare(`
+    INSERT INTO delivery_corrections (original_delivery_id, correction_number, reason, status, note)
+    VALUES (?, ?, ?, 'draft', ?)
+  `).run(deliveryId, payload.correction_number, payload.reason, payload.note);
+  response.status(201).json(selectDeliveryCorrection.get(result.lastInsertRowid));
+});
+
+app.put("/api/delivery-corrections/:id", (request, response) => {
+  const id = Number(request.params.id);
+  const correction = selectDeliveryCorrection.get(id);
+  if (!correction) return response.status(404).json({ error: "Delivery correction not found" });
+  if (correction.status !== "draft") return response.status(400).json({ error: "Posted correction cannot be edited" });
+  const payload = normalizeDeliveryCorrection(request.body);
+  if (!payload.reason) return response.status(400).json({ error: "Correction reason is required" });
+  db.prepare(`
+    UPDATE delivery_corrections
+    SET correction_number = ?, reason = ?, note = ?
+    WHERE id = ?
+  `).run(payload.correction_number, payload.reason, payload.note, id);
+  response.json(selectDeliveryCorrection.get(id));
+});
+
+app.get("/api/delivery-corrections/:id/lines", (request, response) => {
+  const id = Number(request.params.id);
+  if (!selectDeliveryCorrection.get(id)) return response.status(404).json({ error: "Delivery correction not found" });
+  response.json(selectDeliveryCorrectionLines.all(id));
+});
+
+app.post("/api/delivery-corrections/:id/lines", (request, response) => {
+  const correctionId = Number(request.params.id);
+  const correction = selectDeliveryCorrection.get(correctionId);
+  if (!correction) return response.status(404).json({ error: "Delivery correction not found" });
+  if (correction.status !== "draft") return response.status(400).json({ error: "Posted correction cannot be edited" });
+  try {
+    const payload = normalizeDeliveryCorrectionLine(request.body);
+    const material = selectMaterial.get(payload.material_id);
+    if (!material || material.isfolder) return response.status(400).json({ error: "Valid material is required" });
+    const result = db.prepare(`
+      INSERT INTO delivery_correction_lines (correction_id, material_id, quantity_delta, unit_price_net, line_total_net_delta, note)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(correctionId, material.id, payload.quantity_delta, payload.unit_price_net, payload.line_total_net_delta, payload.note);
+    response.status(201).json(selectDeliveryCorrectionLines.all(correctionId).find((line) => line.id === result.lastInsertRowid));
+  } catch (error) {
+    if (error instanceof DeliveryError) return response.status(400).json({ error: error.message });
+    throw error;
+  }
+});
+
+app.delete("/api/delivery-correction-lines/:id", (request, response) => {
+  const id = Number(request.params.id);
+  const line = db.prepare("SELECT * FROM delivery_correction_lines WHERE id = ?").get(id);
+  if (!line) return response.status(404).json({ error: "Delivery correction line not found" });
+  const correction = selectDeliveryCorrection.get(line.correction_id);
+  if (correction?.status !== "draft") return response.status(400).json({ error: "Posted correction cannot be edited" });
+  db.prepare("DELETE FROM delivery_correction_lines WHERE id = ?").run(id);
+  response.status(204).end();
+});
+
+app.post("/api/delivery-corrections/:id/post", (request, response) => {
+  const id = Number(request.params.id);
+  try {
+    const correction = postDeliveryCorrectionToDatabase(db, id);
+    response.json({
+      ...correction,
+      lines: selectDeliveryCorrectionLines.all(id),
       stock: selectStock.all().map(withAvailableStock)
     });
   } catch (error) {

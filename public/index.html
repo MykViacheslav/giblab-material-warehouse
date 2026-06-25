@@ -659,6 +659,59 @@
             </div>
           </div>
           <p id="deliveryStatus" class="hint">Szkic dostawy nie zmienia magazynu. Stan rośnie dopiero po kliknięciu „Zaksięguj dostawę”.</p>
+          <section class="panel compact-panel">
+            <h3>Korekty dostaw</h3>
+            <form id="deliveryCorrectionForm" class="grid-form">
+              <input name="correction_number" placeholder="Numer korekty">
+              <input name="reason" placeholder="Powód korekty" required>
+              <input name="note" placeholder="Uwagi korekty">
+              <button type="submit">Zapisz korektę</button>
+              <button id="newDeliveryCorrectionBtn" type="button">Nowa korekta</button>
+              <button id="postDeliveryCorrectionBtn" type="button">Zaksięguj korektę</button>
+            </form>
+            <form id="deliveryCorrectionLineForm" class="stock-form">
+              <select name="material_id" required>
+                <option value="">Wybierz materiał</option>
+              </select>
+              <input name="quantity_delta" placeholder="Zmiana ilości (+/-)" required>
+              <input name="unit_price_net" placeholder="Cena netto">
+              <input name="note" placeholder="Uwagi pozycji">
+              <button type="submit">Dodaj korektę pozycji</button>
+            </form>
+            <div class="split-grid">
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Dostawa</th>
+                      <th>Numer</th>
+                      <th>Powód</th>
+                      <th>Status</th>
+                      <th>Delta</th>
+                    </tr>
+                  </thead>
+                  <tbody id="deliveryCorrectionsBody"></tbody>
+                </table>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Kod</th>
+                      <th>Nazwa</th>
+                      <th>Delta</th>
+                      <th>Cena</th>
+                      <th>Usuń</th>
+                    </tr>
+                  </thead>
+                  <tbody id="deliveryCorrectionLinesBody"></tbody>
+                </table>
+              </div>
+            </div>
+            <p id="deliveryCorrectionStatus" class="hint">Korekta w szkicu nie zmienia magazynu. Stan zmienia się dopiero po zaksięgowaniu korekty.</p>
+          </section>
         </section>
 
         <section id="offcutsTab" class="tab-page">

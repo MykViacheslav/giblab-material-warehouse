@@ -109,6 +109,18 @@ Draft deliveries do not change stock quantities.
 
 Posting a delivery increases stock with the existing `receive` stock movement and writes stock history.
 
+## Delivery corrections
+
+Posted deliveries are not edited directly.
+
+Mistakes are fixed with delivery corrections.
+
+A posted correction creates normal stock history events.
+
+Negative corrections cannot consume reserved stock or make stock negative.
+
+Draft corrections do not change stock.
+
 ## Tests
 
 ```bash
