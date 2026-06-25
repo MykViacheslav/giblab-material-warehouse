@@ -319,6 +319,12 @@ select {
   margin-bottom: 8px;
 }
 
+.split-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
+}
+
 table {
   border-collapse: collapse;
   font-size: 13px;

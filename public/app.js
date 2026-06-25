@@ -9,12 +9,15 @@ const state = {
   cutJobs: [],
   cutParts: [],
   cutQuoteLines: [],
+  deliveries: [],
+  deliveryLines: [],
   materialImportRows: [],
   selectedId: null,
   selectedCustomerId: null,
   selectedOrderId: null,
   selectedSupplyId: null,
   selectedCutJobId: null,
+  selectedDeliveryId: null,
   collapsed: new Set()
 };
 
@@ -46,6 +49,13 @@ const elements = {
   materialImportSummary: document.querySelector("#materialImportSummary"),
   materialImportPreviewBody: document.querySelector("#materialImportPreviewBody"),
   stockForm: document.querySelector("#stockForm"),
+  deliveryForm: document.querySelector("#deliveryForm"),
+  deliveryLineForm: document.querySelector("#deliveryLineForm"),
+  deliveriesBody: document.querySelector("#deliveriesBody"),
+  deliveryLinesBody: document.querySelector("#deliveryLinesBody"),
+  deliveryStatus: document.querySelector("#deliveryStatus"),
+  newDeliveryBtn: document.querySelector("#newDeliveryBtn"),
+  postDeliveryBtn: document.querySelector("#postDeliveryBtn"),
   offcutForm: document.querySelector("#offcutForm"),
   supplyForm: document.querySelector("#supplyForm"),
   suppliesBody: document.querySelector("#suppliesBody"),
@@ -457,6 +467,38 @@ elements.stockForm.addEventListener("submit", async (event) => {
   showToast("Operacja magazynowa zapisana");
 });
 
+elements.deliveryForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const payload = formPayload(elements.deliveryForm);
+  const url = state.selectedDeliveryId ? `/api/deliveries/${state.selectedDeliveryId}` : "/api/deliveries";
+  const saved = await postJson(url, payload, state.selectedDeliveryId ? "PUT" : "POST");
+  state.selectedDeliveryId = saved.id;
+  await refreshDeliveries();
+  await loadDeliveryLines(saved.id);
+  showToast("Dostawa zapisana");
+});
+
+elements.deliveryLineForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!state.selectedDeliveryId) return showToast("Najpierw zapisz albo wybierz dostawę");
+  await postJson(`/api/deliveries/${state.selectedDeliveryId}/lines`, formPayload(elements.deliveryLineForm));
+  elements.deliveryLineForm.reset();
+  await refreshDeliveries();
+  await loadDeliveryLines(state.selectedDeliveryId);
+  showToast("Pozycja dostawy dodana");
+});
+
+elements.newDeliveryBtn?.addEventListener("click", resetDeliveryForm);
+
+elements.postDeliveryBtn?.addEventListener("click", async () => {
+  if (!state.selectedDeliveryId) return showToast("Najpierw wybierz dostawę");
+  const result = await postJson(`/api/deliveries/${state.selectedDeliveryId}/post`, {});
+  await refreshAll();
+  state.selectedDeliveryId = result.id;
+  await loadDeliveryLines(result.id);
+  showToast("Dostawa zaksięgowana");
+});
+
 elements.offcutForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   await postJson("/api/offcuts", formPayload(elements.offcutForm));
@@ -499,6 +541,9 @@ await refreshAll();
 setDefaultOrderDates();
 setDefaultPaymentDate();
 await loadNextOrderNumber();
+if (elements.deliveryForm?.elements.delivery_date && !elements.deliveryForm.elements.delivery_date.value) {
+  elements.deliveryForm.elements.delivery_date.value = new Date().toISOString().slice(0, 10);
+}
 
 async function refreshAll() {
   const [flat, tree] = await Promise.all([
@@ -513,6 +558,7 @@ async function refreshAll() {
   await refreshCrm();
   await refreshPricing();
   await refreshSupplies();
+  await refreshDeliveries();
   await refreshCutting();
   await refreshOffcuts();
   renderCalendar();
@@ -548,6 +594,19 @@ async function refreshSupplies() {
   state.supplies = elements.suppliesBody ? await fetchJson("/api/supplies") : [];
   renderSupplies();
   renderDashboard();
+}
+
+async function refreshDeliveries() {
+  if (!elements.deliveriesBody) return;
+  state.deliveries = await fetchJson("/api/deliveries");
+  renderDeliveryMaterialSelect();
+  renderDeliveries();
+  if (state.selectedDeliveryId) await loadDeliveryLines(state.selectedDeliveryId);
+}
+
+async function loadDeliveryLines(deliveryId) {
+  state.deliveryLines = await fetchJson(`/api/deliveries/${deliveryId}/lines`);
+  renderDeliveryLines();
 }
 
 async function loadQuoteLines(orderId) {
@@ -929,6 +988,99 @@ function renderSupplies() {
       showToast("Pozycja usunięta");
     });
   });
+}
+
+function renderDeliveryMaterialSelect() {
+  const select = elements.deliveryLineForm?.elements.material_id;
+  if (!select) return;
+  const currentValue = select.value;
+  const materials = state.flat.filter((row) => !row.isfolder);
+  select.innerHTML = `<option value="">Wybierz materiał</option>` + materials.map((material) => `
+    <option value="${material.id}">${escapeHtml([material.code, material.name].filter(Boolean).join(" - "))}</option>
+  `).join("");
+  if (materials.some((material) => String(material.id) === currentValue)) select.value = currentValue;
+}
+
+function renderDeliveries() {
+  if (!elements.deliveriesBody) return;
+  elements.deliveriesBody.innerHTML = state.deliveries.map((row) => `
+    <tr class="material-row ${String(row.id) === String(state.selectedDeliveryId) ? "selected-row" : ""}" data-id="${row.id}">
+      <td>${row.id}</td>
+      <td>${escapeHtml(row.delivery_date || "")}</td>
+      <td>${escapeHtml(row.supplier || "")}</td>
+      <td>${escapeHtml(row.document_number || "")}</td>
+      <td>${escapeHtml(row.status || "")}</td>
+      <td>${formatNumber(row.line_count)}</td>
+      <td>${formatNumber(row.total_quantity)}</td>
+      <td>${formatMoney(row.total_value)}</td>
+    </tr>
+  `).join("");
+  elements.deliveriesBody.querySelectorAll("tr").forEach((rowElement) => {
+    rowElement.addEventListener("click", () => selectDelivery(Number(rowElement.dataset.id)));
+  });
+}
+
+function renderDeliveryLines() {
+  if (!elements.deliveryLinesBody) return;
+  const delivery = currentDelivery();
+  elements.deliveryLinesBody.innerHTML = state.deliveryLines.map((row) => `
+    <tr>
+      <td>${row.id}</td>
+      <td>${escapeHtml(row.material_code || "")}</td>
+      <td>${escapeHtml(row.material_name || "")}</td>
+      <td>${formatNumber(row.quantity)}</td>
+      <td>${formatMoney(row.unit_price)}</td>
+      <td>${delivery?.status === "posted" ? "" : `<button class="small danger" data-delete-delivery-line="${row.id}" type="button">Usuń</button>`}</td>
+    </tr>
+  `).join("");
+  elements.deliveryLinesBody.querySelectorAll("[data-delete-delivery-line]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await fetchJson(`/api/delivery-lines/${button.dataset.deleteDeliveryLine}`, { method: "DELETE" });
+      await refreshDeliveries();
+      showToast("Pozycja dostawy usunięta");
+    });
+  });
+  updateDeliveryStatusText();
+}
+
+function selectDelivery(id) {
+  const delivery = state.deliveries.find((row) => row.id === id);
+  if (!delivery) return;
+  state.selectedDeliveryId = id;
+  for (const field of elements.deliveryForm.elements) {
+    if (!field.name) continue;
+    field.value = delivery[field.name] ?? "";
+  }
+  loadDeliveryLines(id);
+  renderDeliveries();
+  updateDeliveryStatusText();
+}
+
+function currentDelivery() {
+  return state.deliveries.find((row) => String(row.id) === String(state.selectedDeliveryId));
+}
+
+function resetDeliveryForm() {
+  state.selectedDeliveryId = null;
+  state.deliveryLines = [];
+  elements.deliveryForm?.reset();
+  if (elements.deliveryForm?.elements.delivery_date) elements.deliveryForm.elements.delivery_date.value = new Date().toISOString().slice(0, 10);
+  elements.deliveryLineForm?.reset();
+  renderDeliveries();
+  renderDeliveryLines();
+  updateDeliveryStatusText();
+}
+
+function updateDeliveryStatusText() {
+  if (!elements.deliveryStatus) return;
+  const delivery = currentDelivery();
+  if (!delivery) {
+    elements.deliveryStatus.textContent = "Utwórz albo wybierz dostawę. Szkic nie zmienia magazynu.";
+    return;
+  }
+  elements.deliveryStatus.textContent = delivery.status === "posted"
+    ? `Dostawa ${delivery.id} jest zaksięgowana. Stany zostały zwiększone, a historia magazynu zapisana.`
+    : `Dostawa ${delivery.id} jest szkicem. Stan rośnie dopiero po kliknięciu „Zaksięguj dostawę”.`;
 }
 
 function renderQuoteLines() {

@@ -101,6 +101,14 @@ Stock movement history is stored in `stock_events` and can be read with:
 GET /api/stock/:materialId/events
 ```
 
+## Deliveries
+
+Manual deliveries can be created as drafts in the `Dostawy` tab.
+
+Draft deliveries do not change stock quantities.
+
+Posting a delivery increases stock with the existing `receive` stock movement and writes stock history.
+
 ## Tests
 
 ```bash

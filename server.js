@@ -10,6 +10,7 @@ import { assertCanUseStock, parseNonNegativeQuantity, parsePositiveQuantity, Sto
 import { applyStockEventToDatabase, listStockEvents, withAvailableStock } from "./src/stockRepository.js";
 import { MATERIAL_CATALOG_COLUMNS, MATERIAL_CATALOG_FIELD_NAMES, normalizeMaterialCatalogFields } from "./src/materialCatalog.js";
 import { commitMaterialImport, previewMaterialImport } from "./src/materialImport.js";
+import { DeliveryError, normalizeDelivery, normalizeDeliveryLine, postDeliveryToDatabase } from "./src/deliveryLogic.js";
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -149,6 +150,29 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS deliveries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    supplier TEXT DEFAULT '',
+    document_number TEXT DEFAULT '',
+    delivery_date TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'draft',
+    notes TEXT DEFAULT '',
+    posted_at TEXT DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS delivery_lines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    delivery_id INTEGER NOT NULL REFERENCES deliveries(id) ON DELETE CASCADE,
+    material_id INTEGER NOT NULL REFERENCES materials(id) ON DELETE RESTRICT,
+    material_code TEXT DEFAULT '',
+    material_name TEXT DEFAULT '',
+    quantity REAL NOT NULL,
+    unit_price REAL NOT NULL DEFAULT 0,
+    notes TEXT DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS quote_lines (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
@@ -248,6 +272,18 @@ const selectStockById = db.prepare(`
 `);
 const selectCustomers = db.prepare("SELECT * FROM customers ORDER BY name COLLATE NOCASE, id");
 const selectCustomer = db.prepare("SELECT * FROM customers WHERE id = ?");
+const selectDeliveries = db.prepare(`
+  SELECT d.*,
+         COUNT(dl.id) AS line_count,
+         COALESCE(SUM(dl.quantity), 0) AS total_quantity,
+         COALESCE(SUM(dl.quantity * dl.unit_price), 0) AS total_value
+  FROM deliveries d
+  LEFT JOIN delivery_lines dl ON dl.delivery_id = d.id
+  GROUP BY d.id
+  ORDER BY d.created_at DESC, d.id DESC
+`);
+const selectDelivery = db.prepare("SELECT * FROM deliveries WHERE id = ?");
+const selectDeliveryLines = db.prepare("SELECT * FROM delivery_lines WHERE delivery_id = ? ORDER BY id");
 const selectOrders = db.prepare(`
   SELECT o.*, c.name AS customer_name, COALESCE(SUM(p.amount), 0) AS paid_amount,
          o.total_amount - COALESCE(SUM(p.amount), 0) AS balance
@@ -645,6 +681,103 @@ app.put("/api/supplies/:id", (request, response) => {
 app.delete("/api/supplies/:id", (request, response) => {
   db.prepare("UPDATE supplies SET active = 0 WHERE id = ?").run(Number(request.params.id));
   response.status(204).end();
+});
+
+app.get("/api/deliveries", (request, response) => {
+  response.json(selectDeliveries.all());
+});
+
+app.post("/api/deliveries", (request, response) => {
+  const payload = normalizeDelivery(request.body);
+  const result = db.prepare(`
+    INSERT INTO deliveries (supplier, document_number, delivery_date, status, notes)
+    VALUES (?, ?, ?, 'draft', ?)
+  `).run(payload.supplier, payload.document_number, payload.delivery_date, payload.notes);
+  response.status(201).json(selectDelivery.get(result.lastInsertRowid));
+});
+
+app.put("/api/deliveries/:id", (request, response) => {
+  const id = Number(request.params.id);
+  const delivery = selectDelivery.get(id);
+  if (!delivery) return response.status(404).json({ error: "Delivery not found" });
+  if (delivery.status === "posted") return response.status(400).json({ error: "Posted delivery cannot be edited" });
+  const payload = normalizeDelivery(request.body);
+  db.prepare(`
+    UPDATE deliveries
+    SET supplier = ?, document_number = ?, delivery_date = ?, notes = ?
+    WHERE id = ?
+  `).run(payload.supplier, payload.document_number, payload.delivery_date, payload.notes, id);
+  response.json(selectDelivery.get(id));
+});
+
+app.delete("/api/deliveries/:id", (request, response) => {
+  const id = Number(request.params.id);
+  const delivery = selectDelivery.get(id);
+  if (!delivery) return response.status(404).json({ error: "Delivery not found" });
+  if (delivery.status === "posted") return response.status(400).json({ error: "Posted delivery cannot be deleted" });
+  db.prepare("DELETE FROM deliveries WHERE id = ?").run(id);
+  response.status(204).end();
+});
+
+app.get("/api/deliveries/:id/lines", (request, response) => {
+  const id = Number(request.params.id);
+  if (!selectDelivery.get(id)) return response.status(404).json({ error: "Delivery not found" });
+  response.json(selectDeliveryLines.all(id));
+});
+
+app.post("/api/deliveries/:id/lines", (request, response) => {
+  const deliveryId = Number(request.params.id);
+  const delivery = selectDelivery.get(deliveryId);
+  if (!delivery) return response.status(404).json({ error: "Delivery not found" });
+  if (delivery.status === "posted") return response.status(400).json({ error: "Posted delivery cannot be edited" });
+  try {
+    const payload = normalizeDeliveryLine(request.body);
+    const material = selectMaterial.get(payload.material_id);
+    if (!material || material.isfolder) return response.status(400).json({ error: "Valid material is required" });
+    const result = db.prepare(`
+      INSERT INTO delivery_lines (delivery_id, material_id, material_code, material_name, quantity, unit_price, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      deliveryId,
+      material.id,
+      material.code || payload.material_code,
+      material.name || payload.material_name,
+      payload.quantity,
+      payload.unit_price,
+      payload.notes
+    );
+    response.status(201).json(db.prepare("SELECT * FROM delivery_lines WHERE id = ?").get(result.lastInsertRowid));
+  } catch (error) {
+    if (error instanceof StockMovementError) return response.status(400).json({ error: error.message, details: error.details });
+    throw error;
+  }
+});
+
+app.delete("/api/delivery-lines/:id", (request, response) => {
+  const id = Number(request.params.id);
+  const line = db.prepare("SELECT * FROM delivery_lines WHERE id = ?").get(id);
+  if (!line) return response.status(404).json({ error: "Delivery line not found" });
+  const delivery = selectDelivery.get(line.delivery_id);
+  if (delivery?.status === "posted") return response.status(400).json({ error: "Posted delivery cannot be edited" });
+  db.prepare("DELETE FROM delivery_lines WHERE id = ?").run(id);
+  response.status(204).end();
+});
+
+app.post("/api/deliveries/:id/post", (request, response) => {
+  const id = Number(request.params.id);
+  try {
+    const delivery = postDeliveryToDatabase(db, id);
+    response.json({
+      ...delivery,
+      lines: selectDeliveryLines.all(id),
+      stock: selectStock.all().map(withAvailableStock)
+    });
+  } catch (error) {
+    if (error instanceof DeliveryError || error instanceof StockMovementError) {
+      return response.status(400).json({ error: error.message, details: error.details });
+    }
+    throw error;
+  }
 });
 
 app.get("/api/orders/:id/quote-lines", (request, response) => {

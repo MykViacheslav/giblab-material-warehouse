@@ -47,6 +47,7 @@
           <button class="tab" data-tab="cutting">Formatki</button>
           <button class="tab active" data-tab="materials">Materiały</button>
           <button class="tab" data-tab="stock">Stany</button>
+          <button class="tab" data-tab="deliveries">Dostawy</button>
           <button class="tab" data-tab="offcuts">Resztki</button>
           <button class="tab" data-tab="project">Import .project</button>
         </div>
@@ -600,6 +601,64 @@
             </table>
           </div>
           <div id="stockHistoryPanel" class="stock-history-panel hint"></div>
+        </section>
+
+        <section id="deliveriesTab" class="tab-page">
+          <form id="deliveryForm" class="grid-form">
+            <input name="supplier" placeholder="Dostawca">
+            <input name="document_number" placeholder="Numer WZ / faktury">
+            <input name="delivery_date" type="date">
+            <input name="notes" placeholder="Uwagi">
+            <button type="submit">Zapisz dostawę</button>
+            <button id="newDeliveryBtn" type="button">Nowa dostawa</button>
+            <button id="postDeliveryBtn" type="button">Zaksięguj dostawę</button>
+          </form>
+
+          <form id="deliveryLineForm" class="stock-form">
+            <select name="material_id" required>
+              <option value="">Wybierz materiał</option>
+            </select>
+            <input name="quantity" placeholder="Ilość" required>
+            <input name="unit_price" placeholder="Cena zakupu">
+            <input name="notes" placeholder="Uwagi pozycji">
+            <button type="submit">Dodaj pozycję</button>
+          </form>
+
+          <div class="split-grid">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Data</th>
+                    <th>Dostawca</th>
+                    <th>Dokument</th>
+                    <th>Status</th>
+                    <th>Poz.</th>
+                    <th>Ilość</th>
+                    <th>Wartość</th>
+                  </tr>
+                </thead>
+                <tbody id="deliveriesBody"></tbody>
+              </table>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Kod</th>
+                    <th>Nazwa</th>
+                    <th>Ilość</th>
+                    <th>Cena</th>
+                    <th>Usuń</th>
+                  </tr>
+                </thead>
+                <tbody id="deliveryLinesBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <p id="deliveryStatus" class="hint">Szkic dostawy nie zmienia magazynu. Stan rośnie dopiero po kliknięciu „Zaksięguj dostawę”.</p>
         </section>
 
         <section id="offcutsTab" class="tab-page">
