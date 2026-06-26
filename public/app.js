@@ -69,7 +69,12 @@ const elements = {
   postDeliveryCorrectionBtn: document.querySelector("#postDeliveryCorrectionBtn"),
   purchaseNeedsBody: document.querySelector("#purchaseNeedsBody"),
   purchaseNeedsSummary: document.querySelector("#purchaseNeedsSummary"),
+  purchaseSearch: document.querySelector("#purchaseSearch"),
+  purchaseSupplierFilter: document.querySelector("#purchaseSupplierFilter"),
+  purchaseProducerFilter: document.querySelector("#purchaseProducerFilter"),
+  purchaseTypeFilter: document.querySelector("#purchaseTypeFilter"),
   refreshPurchaseNeedsBtn: document.querySelector("#refreshPurchaseNeedsBtn"),
+  exportPurchaseNeedsCsvBtn: document.querySelector("#exportPurchaseNeedsCsvBtn"),
   offcutForm: document.querySelector("#offcutForm"),
   supplyForm: document.querySelector("#supplyForm"),
   suppliesBody: document.querySelector("#suppliesBody"),
@@ -557,6 +562,21 @@ elements.refreshPurchaseNeedsBtn?.addEventListener("click", async () => {
   showToast("Raport zakupów odświeżony");
 });
 
+elements.exportPurchaseNeedsCsvBtn?.addEventListener("click", () => {
+  window.location.href = `/api/purchase-needs.csv${purchaseFilterQuery()}`;
+});
+
+[elements.purchaseSearch, elements.purchaseSupplierFilter, elements.purchaseProducerFilter, elements.purchaseTypeFilter].forEach((input) => {
+  input?.addEventListener("change", refreshPurchaseNeeds);
+});
+
+elements.purchaseSearch?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    refreshPurchaseNeeds();
+  }
+});
+
 elements.offcutForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   await postJson("/api/offcuts", formPayload(elements.offcutForm));
@@ -672,7 +692,8 @@ async function refreshDeliveries() {
 
 async function refreshPurchaseNeeds() {
   if (!elements.purchaseNeedsBody) return;
-  state.purchaseNeeds = await fetchJson("/api/purchase-needs");
+  state.purchaseNeeds = await fetchJson(`/api/purchase-needs${purchaseFilterQuery()}`);
+  await renderPurchaseNeedFilters();
   renderPurchaseNeeds();
 }
 
@@ -1113,6 +1134,35 @@ function renderPurchaseNeeds() {
       </tr>
     `).join("")
     : `<tr><td colspan="13">Wszystkie aktywne materiały są na poziomie minimum albo powyżej.</td></tr>`;
+}
+
+async function renderPurchaseNeedFilters() {
+  if (!elements.purchaseSupplierFilter) return;
+  const unfiltered = await fetchJson("/api/purchase-needs");
+  fillFilterSelect(elements.purchaseSupplierFilter, "Dostawca: wszyscy", uniqueValues(unfiltered.rows, "supplier"), elements.purchaseSupplierFilter.value);
+  fillFilterSelect(elements.purchaseProducerFilter, "Producent: wszyscy", uniqueValues(unfiltered.rows, "producer"), elements.purchaseProducerFilter.value);
+  fillFilterSelect(elements.purchaseTypeFilter, "Typ: wszystkie", uniqueValues(unfiltered.rows, "material_type"), elements.purchaseTypeFilter.value);
+}
+
+function fillFilterSelect(select, label, values, currentValue) {
+  if (!select) return;
+  select.innerHTML = `<option value="">${escapeHtml(label)}</option>` + values.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join("");
+  if (values.includes(currentValue)) select.value = currentValue;
+}
+
+function uniqueValues(rows, field) {
+  return [...new Set(rows.map((row) => row[field] || "").filter(Boolean))]
+    .sort((first, second) => first.localeCompare(second, "pl"));
+}
+
+function purchaseFilterQuery() {
+  const params = new URLSearchParams();
+  if (elements.purchaseSearch?.value.trim()) params.set("search", elements.purchaseSearch.value.trim());
+  if (elements.purchaseSupplierFilter?.value) params.set("supplier", elements.purchaseSupplierFilter.value);
+  if (elements.purchaseProducerFilter?.value) params.set("producer", elements.purchaseProducerFilter.value);
+  if (elements.purchaseTypeFilter?.value) params.set("material_type", elements.purchaseTypeFilter.value);
+  const query = params.toString();
+  return query ? `?${query}` : "";
 }
 
 function renderDeliveries() {

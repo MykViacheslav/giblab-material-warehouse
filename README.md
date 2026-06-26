@@ -133,6 +133,10 @@ available = quantity - reserved
 
 It is a report only. It does not create supplier orders or change stock.
 
+The report can be filtered by supplier, producer, material type and search text.
+
+Use `Eksport CSV` to download the currently filtered purchase needs list.
+
 ## Tests
 
 ```bash

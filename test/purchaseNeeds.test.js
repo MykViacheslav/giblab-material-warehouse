@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildPurchaseNeedsReport } from "../src/purchaseNeeds.js";
+import { buildFilteredPurchaseNeedsReport, buildPurchaseNeedsReport, purchaseNeedsToCsv } from "../src/purchaseNeeds.js";
 
 test("purchase needs report shows material below minimum stock", () => {
   const report = buildPurchaseNeedsReport([
@@ -47,4 +47,42 @@ test("purchase needs report summarizes by supplier", () => {
     ["EGGER", 2, 7],
     ["Kronospan", 1, 2]
   ]);
+});
+
+test("purchase needs report filters by supplier producer material type and search", () => {
+  const rows = [
+    { id: 1, code: "EG-U216", name: "Kaszmir", supplier: "EGGER", producer: "EGGER", material_type: "chipboard", quantity: 1, reserved: 0, min_stock: 5, is_active: 1 },
+    { id: 2, code: "KS-5981", name: "Dab", supplier: "Kronospan", producer: "Kronospan", material_type: "MDF", quantity: 0, reserved: 0, min_stock: 4, is_active: 1 }
+  ];
+  assert.equal(buildFilteredPurchaseNeedsReport(rows, { supplier: "EGGER" }).rows[0].code, "EG-U216");
+  assert.equal(buildFilteredPurchaseNeedsReport(rows, { producer: "Kronospan" }).rows[0].code, "KS-5981");
+  assert.equal(buildFilteredPurchaseNeedsReport(rows, { material_type: "MDF" }).rows[0].code, "KS-5981");
+  assert.equal(buildFilteredPurchaseNeedsReport(rows, { search: "kasz" }).rows[0].code, "EG-U216");
+});
+
+test("purchase needs csv export includes headers and escaped values", () => {
+  const csv = purchaseNeedsToCsv([
+    {
+      supplier: "ACME;Test",
+      producer: "EGGER",
+      code: "EG-U216",
+      name: "Kaszmir \"premium\"",
+      decor_code: "U216",
+      decor_name: "Kaszmir",
+      structure: "ST9",
+      material_type: "chipboard",
+      thickness: 18,
+      length: 2800,
+      width: 2070,
+      unit: "szt.",
+      quantity: 1,
+      reserved: 0,
+      available: 1,
+      min_stock: 5,
+      order_quantity: 4,
+      location: "A1"
+    }
+  ]);
+  assert.match(csv, /^Dostawca;Producent;Kod;/);
+  assert.match(csv, /"ACME;Test";EGGER;EG-U216;"Kaszmir ""premium"""/);
 });

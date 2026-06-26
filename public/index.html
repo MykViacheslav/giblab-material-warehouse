@@ -717,7 +717,18 @@
 
         <section id="purchaseTab" class="tab-page">
           <div class="toolbar-row">
+            <input id="purchaseSearch" placeholder="Szukaj materiału">
+            <select id="purchaseSupplierFilter">
+              <option value="">Dostawca: wszyscy</option>
+            </select>
+            <select id="purchaseProducerFilter">
+              <option value="">Producent: wszyscy</option>
+            </select>
+            <select id="purchaseTypeFilter">
+              <option value="">Typ: wszystkie</option>
+            </select>
             <button id="refreshPurchaseNeedsBtn" type="button">Odśwież raport</button>
+            <button id="exportPurchaseNeedsCsvBtn" type="button">Eksport CSV</button>
             <span id="purchaseNeedsSummary" class="hint"></span>
           </div>
           <div class="table-wrap">

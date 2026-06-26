@@ -41,6 +41,38 @@ export function buildPurchaseNeedsReport(rows = []) {
   };
 }
 
+export function filterPurchaseNeedsRows(rows = [], filters = {}) {
+  const supplier = normalizedFilter(filters.supplier);
+  const producer = normalizedFilter(filters.producer);
+  const materialType = normalizedFilter(filters.material_type ?? filters.materialType);
+  const search = normalizedFilter(filters.search);
+  return rows.filter((row) => {
+    if (supplier && normalizedFilter(row.supplier || "Bez dostawcy") !== supplier) return false;
+    if (producer && normalizedFilter(row.producer) !== producer) return false;
+    if (materialType && normalizedFilter(row.material_type || "other") !== materialType) return false;
+    if (search && ![
+      row.code,
+      row.name,
+      row.decor_code,
+      row.decor_name,
+      row.structure,
+      row.supplier,
+      row.producer
+    ].some((value) => normalizedFilter(value).includes(search))) return false;
+    return true;
+  });
+}
+
+export function buildFilteredPurchaseNeedsReport(rows = [], filters = {}) {
+  const report = buildPurchaseNeedsReport(rows);
+  const filteredRows = filterPurchaseNeedsRows(report.rows, filters);
+  return {
+    rows: filteredRows,
+    summary: summarizePurchaseNeeds(filteredRows),
+    filters: normalizePurchaseNeedFilters(filters)
+  };
+}
+
 export function summarizePurchaseNeeds(rows = []) {
   const bySupplier = new Map();
   for (const row of rows) {
@@ -54,6 +86,59 @@ export function summarizePurchaseNeeds(rows = []) {
     total_rows: rows.length,
     total_order_quantity: rows.reduce((sum, row) => sum + Number(row.order_quantity || 0), 0),
     suppliers: [...bySupplier.values()].sort((first, second) => first.supplier.localeCompare(second.supplier, "pl"))
+  };
+}
+
+export function purchaseNeedsToCsv(rows = []) {
+  const headers = [
+    "Dostawca",
+    "Producent",
+    "Kod",
+    "Nazwa",
+    "Kod dekoru",
+    "Nazwa dekoru",
+    "Struktura",
+    "Typ",
+    "Grubosc",
+    "Dlugosc",
+    "Szerokosc",
+    "Jednostka",
+    "Stan",
+    "Rezerwacja",
+    "Dostepne",
+    "Minimum",
+    "Zamowic",
+    "Lokalizacja"
+  ];
+  const body = rows.map((row) => [
+    row.supplier,
+    row.producer,
+    row.code,
+    row.name,
+    row.decor_code,
+    row.decor_name,
+    row.structure,
+    row.material_type,
+    row.thickness,
+    row.length,
+    row.width,
+    row.unit,
+    row.quantity,
+    row.reserved,
+    row.available,
+    row.min_stock,
+    row.order_quantity,
+    row.location
+  ]);
+  return [headers, ...body].map((line) => line.map(csvCell).join(";")).join("\r\n") + "\r\n";
+}
+
+export function normalizePurchaseNeedFilters(filters = {}) {
+  return {
+    supplier: textValue(filters.supplier),
+    producer: textValue(filters.producer),
+    material_type: textValue(filters.material_type ?? filters.materialType),
+    search: textValue(filters.search)
   };
 }
 
@@ -76,6 +161,16 @@ function nullableNumber(value) {
 
 function textValue(value) {
   return String(value ?? "").trim();
+}
+
+function normalizedFilter(value) {
+  return textValue(value).toLowerCase();
+}
+
+function csvCell(value) {
+  if (value === null || value === undefined) return "";
+  const text = String(value).replaceAll('"', '""');
+  return /[;"\r\n]/.test(text) ? `"${text}"` : text;
 }
 
 function isTrue(value) {

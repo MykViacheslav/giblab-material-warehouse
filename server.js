@@ -19,7 +19,7 @@ import {
   postDeliveryCorrectionToDatabase,
   postDeliveryToDatabase
 } from "./src/deliveryLogic.js";
-import { buildPurchaseNeedsReport } from "./src/purchaseNeeds.js";
+import { buildFilteredPurchaseNeedsReport, purchaseNeedsToCsv } from "./src/purchaseNeeds.js";
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -386,7 +386,14 @@ app.get("/api/materials/flat", (request, response) => {
 });
 
 app.get("/api/purchase-needs", (request, response) => {
-  response.json(buildPurchaseNeedsReport(selectStock.all().map(withAvailableStock)));
+  response.json(buildFilteredPurchaseNeedsReport(selectStock.all().map(withAvailableStock), request.query));
+});
+
+app.get("/api/purchase-needs.csv", (request, response) => {
+  const report = buildFilteredPurchaseNeedsReport(selectStock.all().map(withAvailableStock), request.query);
+  response.setHeader("Content-Type", "text/csv; charset=utf-8");
+  response.setHeader("Content-Disposition", "attachment; filename=\"purchase-needs.csv\"");
+  response.send(`\uFEFF${purchaseNeedsToCsv(report.rows)}`);
 });
 
 app.post("/api/materials/import-preview", upload.single("catalog"), (request, response) => {
