@@ -13,6 +13,7 @@ const state = {
   deliveryLines: [],
   deliveryCorrections: [],
   deliveryCorrectionLines: [],
+  purchaseNeeds: { rows: [], summary: null },
   materialImportRows: [],
   selectedId: null,
   selectedCustomerId: null,
@@ -66,6 +67,9 @@ const elements = {
   deliveryCorrectionStatus: document.querySelector("#deliveryCorrectionStatus"),
   newDeliveryCorrectionBtn: document.querySelector("#newDeliveryCorrectionBtn"),
   postDeliveryCorrectionBtn: document.querySelector("#postDeliveryCorrectionBtn"),
+  purchaseNeedsBody: document.querySelector("#purchaseNeedsBody"),
+  purchaseNeedsSummary: document.querySelector("#purchaseNeedsSummary"),
+  refreshPurchaseNeedsBtn: document.querySelector("#refreshPurchaseNeedsBtn"),
   offcutForm: document.querySelector("#offcutForm"),
   supplyForm: document.querySelector("#supplyForm"),
   suppliesBody: document.querySelector("#suppliesBody"),
@@ -548,6 +552,11 @@ elements.postDeliveryCorrectionBtn?.addEventListener("click", async () => {
   showToast("Korekta zaksięgowana");
 });
 
+elements.refreshPurchaseNeedsBtn?.addEventListener("click", async () => {
+  await refreshPurchaseNeeds();
+  showToast("Raport zakupów odświeżony");
+});
+
 elements.offcutForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   await postJson("/api/offcuts", formPayload(elements.offcutForm));
@@ -608,6 +617,7 @@ async function refreshAll() {
   await refreshPricing();
   await refreshSupplies();
   await refreshDeliveries();
+  await refreshPurchaseNeeds();
   await refreshCutting();
   await refreshOffcuts();
   renderCalendar();
@@ -658,6 +668,12 @@ async function refreshDeliveries() {
   renderDeliveryCorrections();
   if (state.selectedDeliveryId) await loadDeliveryLines(state.selectedDeliveryId);
   if (state.selectedDeliveryCorrectionId) await loadDeliveryCorrectionLines(state.selectedDeliveryCorrectionId);
+}
+
+async function refreshPurchaseNeeds() {
+  if (!elements.purchaseNeedsBody) return;
+  state.purchaseNeeds = await fetchJson("/api/purchase-needs");
+  renderPurchaseNeeds();
 }
 
 async function loadDeliveryLines(deliveryId) {
@@ -1069,6 +1085,34 @@ function renderDeliveryMaterialSelect() {
     correctionSelect.innerHTML = options;
     if (materials.some((material) => String(material.id) === correctionValue)) correctionSelect.value = correctionValue;
   }
+}
+
+function renderPurchaseNeeds() {
+  if (!elements.purchaseNeedsBody) return;
+  const rows = state.purchaseNeeds.rows || [];
+  const summary = state.purchaseNeeds.summary || {};
+  elements.purchaseNeedsSummary.textContent = rows.length
+    ? `Do zamówienia: ${rows.length} pozycji, razem ${formatNumber(summary.total_order_quantity)} jednostek.`
+    : "Brak materiałów poniżej minimum magazynowego.";
+  elements.purchaseNeedsBody.innerHTML = rows.length
+    ? rows.map((row) => `
+      <tr class="stock-alert">
+        <td>${escapeHtml(row.supplier || "")}</td>
+        <td>${escapeHtml(row.producer || "")}</td>
+        <td>${escapeHtml(row.code || "")}</td>
+        <td>${escapeHtml(row.name || "")}</td>
+        <td>${escapeHtml([row.decor_code, row.decor_name].filter(Boolean).join(" "))}</td>
+        <td>${escapeHtml(row.structure || "")}</td>
+        <td>${formatNumber(row.thickness)}</td>
+        <td>${formatNumber(row.quantity)}</td>
+        <td>${formatNumber(row.reserved)}</td>
+        <td>${formatNumber(row.available)}</td>
+        <td>${formatNumber(row.min_stock)}</td>
+        <td><strong>${formatNumber(row.order_quantity)}</strong></td>
+        <td>${escapeHtml(row.location || "")}</td>
+      </tr>
+    `).join("")
+    : `<tr><td colspan="13">Wszystkie aktywne materiały są na poziomie minimum albo powyżej.</td></tr>`;
 }
 
 function renderDeliveries() {

@@ -48,6 +48,7 @@
           <button class="tab active" data-tab="materials">Materiały</button>
           <button class="tab" data-tab="stock">Stany</button>
           <button class="tab" data-tab="deliveries">Dostawy</button>
+          <button class="tab" data-tab="purchase">Zakupy</button>
           <button class="tab" data-tab="offcuts">Resztki</button>
           <button class="tab" data-tab="project">Import .project</button>
         </div>
@@ -712,6 +713,35 @@
             </div>
             <p id="deliveryCorrectionStatus" class="hint">Korekta w szkicu nie zmienia magazynu. Stan zmienia się dopiero po zaksięgowaniu korekty.</p>
           </section>
+        </section>
+
+        <section id="purchaseTab" class="tab-page">
+          <div class="toolbar-row">
+            <button id="refreshPurchaseNeedsBtn" type="button">Odśwież raport</button>
+            <span id="purchaseNeedsSummary" class="hint"></span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Dostawca</th>
+                  <th>Producent</th>
+                  <th>Kod</th>
+                  <th>Nazwa</th>
+                  <th>Dekor</th>
+                  <th>Str.</th>
+                  <th>G</th>
+                  <th>Stan</th>
+                  <th>Rez.</th>
+                  <th>Dostępne</th>
+                  <th>Min.</th>
+                  <th>Zamówić</th>
+                  <th>Lok.</th>
+                </tr>
+              </thead>
+              <tbody id="purchaseNeedsBody"></tbody>
+            </table>
+          </div>
         </section>
 
         <section id="offcutsTab" class="tab-page">

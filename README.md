@@ -121,6 +121,18 @@ Negative corrections cannot consume reserved stock or make stock negative.
 
 Draft corrections do not change stock.
 
+## Purchase needs
+
+The `Zakupy` tab shows active materials below their minimum stock.
+
+The report uses available stock:
+
+```text
+available = quantity - reserved
+```
+
+It is a report only. It does not create supplier orders or change stock.
+
 ## Tests
 
 ```bash
