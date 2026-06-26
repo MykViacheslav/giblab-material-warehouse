@@ -132,6 +132,7 @@
                   <th>Adres</th>
                   <th>Nieopłacone</th>
                   <th>Saldo</th>
+                  <th>Akcje</th>
                 </tr>
               </thead>
               <tbody id="customersBody"></tbody>
@@ -216,6 +217,7 @@
                   <th>Wartość</th>
                   <th>Wpłacono</th>
                   <th>Saldo</th>
+                  <th>Akcje</th>
                 </tr>
               </thead>
               <tbody id="ordersBody"></tbody>
@@ -254,7 +256,8 @@
                 <input name="name" placeholder="Nazwa pozycji" required>
                 <input name="unit" placeholder="J.m., np. m², mb, szt.">
                 <input name="unit_price" placeholder="Cena jednostkowa" required>
-                <button type="submit">Dodaj do cennika</button>
+                <button type="submit">Zapisz w cenniku</button>
+                <button id="clearPriceItemBtn" type="button">Nowa cena</button>
               </form>
               <div class="table-wrap quote-table">
                 <table>
@@ -425,10 +428,18 @@
               <input name="material_price" placeholder="Cena materiału / m2">
               <input name="cut_price" placeholder="Cena cięcia / szt.">
               <input name="edge_price" placeholder="Cena oklejania / mb">
+              <input name="milling_price" placeholder="Cena frezowania / szt.">
+              <input name="drilling_price" placeholder="Cena otworu / szt.">
+              <input name="lacquer_price" placeholder="Cena lakierowania / m2">
+              <input name="other_price" placeholder="Cena innej pracy / szt.">
               <select name="service_price_item_id" class="service-price-select"></select>
               <select name="service_price_target" class="service-target-select">
                 <option value="cut_price">Cięcie / szt.</option>
                 <option value="edge_price">Oklejanie / mb</option>
+                <option value="milling_price">Frezowanie / szt.</option>
+                <option value="drilling_price">Otwór / szt.</option>
+                <option value="lacquer_price">Lakierowanie / m2</option>
+                <option value="other_price">Inna praca / szt.</option>
               </select>
               <button id="applyServicePriceBtn" type="button">Wstaw cenę z cennika</button>
               <span id="cutTotals" class="quote-summary">Kliknij zlecenie formatek, żeby zobaczyć metry i wycenę.</span>
@@ -562,6 +573,7 @@
                   <th>Min.</th>
                   <th>Lok.</th>
                   <th>Akt.</th>
+                  <th>Akcje</th>
                 </tr>
               </thead>
               <tbody id="materialsBody"></tbody>
@@ -596,6 +608,7 @@
                   <th>Dostępne</th>
                   <th>Zużyto</th>
                   <th>Historia</th>
+                  <th>Akcje</th>
                 </tr>
               </thead>
               <tbody id="stockBody"></tbody>
@@ -729,6 +742,7 @@
             </select>
             <button id="refreshPurchaseNeedsBtn" type="button">Odśwież raport</button>
             <button id="exportPurchaseNeedsCsvBtn" type="button">Eksport CSV</button>
+            <button id="sendPurchaseNeedsTelegramBtn" type="button">Wyślij Telegram</button>
             <span id="purchaseNeedsSummary" class="hint"></span>
           </div>
           <div class="table-wrap">
@@ -785,6 +799,7 @@
                   <th>Typ</th>
                   <th>Projekt</th>
                   <th>Status</th>
+                  <th>Akcje</th>
                 </tr>
               </thead>
               <tbody id="offcutsBody"></tbody>

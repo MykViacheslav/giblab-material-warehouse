@@ -18,7 +18,9 @@ const state = {
   selectedId: null,
   selectedCustomerId: null,
   selectedOrderId: null,
+  selectedPriceItemId: null,
   selectedSupplyId: null,
+  selectedOffcutId: null,
   selectedCutJobId: null,
   selectedDeliveryId: null,
   selectedDeliveryCorrectionId: null,
@@ -75,6 +77,7 @@ const elements = {
   purchaseTypeFilter: document.querySelector("#purchaseTypeFilter"),
   refreshPurchaseNeedsBtn: document.querySelector("#refreshPurchaseNeedsBtn"),
   exportPurchaseNeedsCsvBtn: document.querySelector("#exportPurchaseNeedsCsvBtn"),
+  sendPurchaseNeedsTelegramBtn: document.querySelector("#sendPurchaseNeedsTelegramBtn"),
   offcutForm: document.querySelector("#offcutForm"),
   supplyForm: document.querySelector("#supplyForm"),
   suppliesBody: document.querySelector("#suppliesBody"),
@@ -83,6 +86,7 @@ const elements = {
   orderForm: document.querySelector("#orderForm"),
   paymentForm: document.querySelector("#paymentForm"),
   priceItemForm: document.querySelector("#priceItemForm"),
+  clearPriceItemBtn: document.querySelector("#clearPriceItemBtn"),
   quoteLineForm: document.querySelector("#quoteLineForm"),
   priceItemsBody: document.querySelector("#priceItemsBody"),
   quoteLinesBody: document.querySelector("#quoteLinesBody"),
@@ -222,10 +226,17 @@ elements.paymentForm.addEventListener("submit", async (event) => {
 
 elements.priceItemForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  await postJson("/api/price-items", formPayload(elements.priceItemForm));
+  const url = state.selectedPriceItemId ? `/api/price-items/${state.selectedPriceItemId}` : "/api/price-items";
+  await postJson(url, formPayload(elements.priceItemForm), state.selectedPriceItemId ? "PUT" : "POST");
+  state.selectedPriceItemId = null;
   elements.priceItemForm.reset();
   await refreshPricing();
   showToast("Pozycja cennika zapisana");
+});
+
+elements.clearPriceItemBtn?.addEventListener("click", () => {
+  state.selectedPriceItemId = null;
+  elements.priceItemForm.reset();
 });
 
 elements.quoteLineForm.addEventListener("submit", async (event) => {
@@ -566,6 +577,13 @@ elements.exportPurchaseNeedsCsvBtn?.addEventListener("click", () => {
   window.location.href = `/api/purchase-needs.csv${purchaseFilterQuery()}`;
 });
 
+elements.sendPurchaseNeedsTelegramBtn?.addEventListener("click", () => {
+  const rows = state.purchaseNeeds.rows || [];
+  if (!rows.length) return showToast("Brak pozycji do wysłania");
+  const text = buildPurchaseNeedsTelegramText(rows);
+  window.open(`https://t.me/share/url?url=&text=${encodeURIComponent(text)}`, "_blank");
+});
+
 [elements.purchaseSearch, elements.purchaseSupplierFilter, elements.purchaseProducerFilter, elements.purchaseTypeFilter].forEach((input) => {
   input?.addEventListener("change", refreshPurchaseNeeds);
 });
@@ -579,7 +597,9 @@ elements.purchaseSearch?.addEventListener("keydown", (event) => {
 
 elements.offcutForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  await postJson("/api/offcuts", formPayload(elements.offcutForm));
+  const url = state.selectedOffcutId ? `/api/offcuts/${encodeURIComponent(state.selectedOffcutId)}` : "/api/offcuts";
+  await postJson(url, formPayload(elements.offcutForm), state.selectedOffcutId ? "PUT" : "POST");
+  state.selectedOffcutId = null;
   elements.offcutForm.reset();
   await refreshOffcuts();
   showToast("Resztka zapisana");
@@ -733,7 +753,7 @@ async function loadCutParts(jobId) {
 async function refreshOffcuts() {
   const offcuts = await fetchJson("/api/offcuts");
   elements.offcutsBody.innerHTML = offcuts.map((row) => `
-    <tr>
+    <tr class="material-row" data-id="${escapeHtml(row.id)}">
       <td>${escapeHtml(row.id)}</td>
       <td>${escapeHtml(row.code)}</td>
       <td>${formatNumber(row.length)}</td>
@@ -742,8 +762,33 @@ async function refreshOffcuts() {
       <td>${row.is_business ? "delowa" : "zwykła"}</td>
       <td>${escapeHtml(row.project_name)}</td>
       <td>${escapeHtml(row.status)}</td>
+      <td>
+        <button class="small" data-edit-offcut="${escapeHtml(row.id)}" type="button">Edytuj</button>
+        <button class="small danger" data-delete-offcut="${escapeHtml(row.id)}" type="button">Usuń</button>
+      </td>
     </tr>
   `).join("");
+  elements.offcutsBody.querySelectorAll("tr").forEach((rowElement) => {
+    rowElement.addEventListener("click", (event) => {
+      if (event.target.closest("button")) return;
+      fillOffcutForm(rowElement.dataset.id, offcuts);
+    });
+  });
+  elements.offcutsBody.querySelectorAll("[data-edit-offcut]").forEach((button) => {
+    button.addEventListener("click", () => fillOffcutForm(button.dataset.editOffcut, offcuts));
+  });
+  elements.offcutsBody.querySelectorAll("[data-delete-offcut]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (!confirm("Usunąć resztkę?")) return;
+      await fetchJson(`/api/offcuts/${encodeURIComponent(button.dataset.deleteOffcut)}`, { method: "DELETE" });
+      if (String(state.selectedOffcutId) === String(button.dataset.deleteOffcut)) {
+        state.selectedOffcutId = null;
+        elements.offcutForm.reset();
+      }
+      await refreshOffcuts();
+      showToast("Resztka usunięta");
+    });
+  });
 }
 
 function renderTree() {
@@ -805,10 +850,33 @@ function renderMaterials() {
       <td>${formatNumber(row.min_stock)}</td>
       <td>${escapeHtml(row.location || "")}</td>
       <td>${row.is_active === 0 ? "0" : "1"}</td>
+      <td>
+        <button class="small" data-edit-material="${row.id}" type="button">Edytuj</button>
+        <button class="small danger" data-delete-material="${row.id}" type="button">Usuń</button>
+      </td>
     </tr>
   `).join("");
   elements.materialsBody.querySelectorAll("tr").forEach((rowElement) => {
-    rowElement.addEventListener("click", () => fillMaterialForm(Number(rowElement.dataset.id)));
+    rowElement.addEventListener("click", (event) => {
+      if (event.target.closest("button")) return;
+      fillMaterialForm(Number(rowElement.dataset.id));
+    });
+  });
+  elements.materialsBody.querySelectorAll("[data-edit-material]").forEach((button) => {
+    button.addEventListener("click", () => fillMaterialForm(Number(button.dataset.editMaterial)));
+  });
+  elements.materialsBody.querySelectorAll("[data-delete-material]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (!confirm("Usunąć tę pozycję materiału?")) return;
+      await fetchJson(`/api/materials/${button.dataset.deleteMaterial}`, { method: "DELETE" });
+      if (String(state.selectedId) === String(button.dataset.deleteMaterial)) {
+        state.selectedId = null;
+        elements.materialForm.reset();
+        elements.materialForm.elements.is_active.checked = true;
+      }
+      await refreshAll();
+      showToast("Pozycja materiału usunięta");
+    });
   });
 }
 
@@ -825,10 +893,22 @@ function renderStock() {
         <td>${formatNumber(row.available)}</td>
         <td>${formatNumber(row.used)}</td>
         <td><button class="small" data-stock-history="${row.id}" type="button">Historia</button></td>
+        <td><button class="small" data-stock-adjust="${row.id}" type="button">Koryguj</button></td>
       </tr>
     `).join("");
   elements.stockBody.querySelectorAll("[data-stock-history]").forEach((button) => {
     button.addEventListener("click", () => showStockHistory(Number(button.dataset.stockHistory)));
+  });
+  elements.stockBody.querySelectorAll("[data-stock-adjust]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const material = state.flat.find((row) => String(row.id) === String(button.dataset.stockAdjust));
+      elements.stockForm.elements.event_type.value = "adjust";
+      elements.stockForm.elements.material_id.value = button.dataset.stockAdjust;
+      elements.stockForm.elements.quantity.value = material?.quantity ?? "";
+      elements.stockForm.elements.note.value = "Korekta ręczna";
+      elements.stockForm.elements.quantity.focus();
+      elements.stockForm.elements.quantity.select?.();
+    });
   });
 }
 
@@ -970,11 +1050,33 @@ function renderCustomers() {
         <td>${escapeHtml(row.address)}</td>
         <td>${debt.unpaidCount ? `<span class="customer-debt-badge">${formatNumber(debt.unpaidCount)}</span>` : ""}</td>
         <td class="${debt.balance > 0 ? "status-unpaid" : "status-paid"}">${formatMoney(debt.balance)}</td>
+        <td>
+          <button class="small" data-edit-customer="${row.id}" type="button">Edytuj</button>
+          <button class="small danger" data-delete-customer="${row.id}" type="button">Usuń</button>
+        </td>
       </tr>
     `;
   }).join("");
   elements.customersBody.querySelectorAll("tr").forEach((rowElement) => {
-    rowElement.addEventListener("click", () => fillCustomerForm(Number(rowElement.dataset.id)));
+    rowElement.addEventListener("click", (event) => {
+      if (event.target.closest("button")) return;
+      fillCustomerForm(Number(rowElement.dataset.id));
+    });
+  });
+  elements.customersBody.querySelectorAll("[data-edit-customer]").forEach((button) => {
+    button.addEventListener("click", () => fillCustomerForm(Number(button.dataset.editCustomer)));
+  });
+  elements.customersBody.querySelectorAll("[data-delete-customer]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (!confirm("Usunąć klienta? Zamówienia zostaną bez przypisanego klienta.")) return;
+      await fetchJson(`/api/customers/${button.dataset.deleteCustomer}`, { method: "DELETE" });
+      if (String(state.selectedCustomerId) === String(button.dataset.deleteCustomer)) {
+        state.selectedCustomerId = null;
+        elements.customerForm.reset();
+      }
+      await refreshCrm();
+      showToast("Klient usunięty");
+    });
   });
 }
 
@@ -1018,7 +1120,7 @@ function renderCutServicePriceSelect() {
   const select = elements.cutQuoteForm.elements.service_price_item_id;
   if (!select) return;
   const currentValue = select.value;
-  const allowedServiceCodes = new Set(["CUT", "EDGE"]);
+  const allowedServiceCodes = new Set(["CUT", "EDGE", "MILL", "DRILL", "LACQUER", "OTHER"]);
   const serviceItems = state.priceItems.filter((item) =>
     !looksLikeMaterialPrice(item) && allowedServiceCodes.has(String(item.code || "").toUpperCase())
   );
@@ -1042,12 +1144,23 @@ function renderPriceItems() {
       <td>${escapeHtml(row.name)}</td>
       <td>${escapeHtml(row.unit)}</td>
       <td>${formatMoney(row.unit_price)}</td>
-      <td><button class="small danger" data-delete-price="${row.id}" type="button">Usuń</button></td>
+      <td>
+        <button class="small" data-edit-price="${row.id}" type="button">Edytuj</button>
+        <button class="small danger" data-delete-price="${row.id}" type="button">Usuń</button>
+      </td>
     </tr>
   `).join("");
+  elements.priceItemsBody.querySelectorAll("[data-edit-price]").forEach((button) => {
+    button.addEventListener("click", () => fillPriceItemForm(Number(button.dataset.editPrice)));
+  });
   elements.priceItemsBody.querySelectorAll("[data-delete-price]").forEach((button) => {
     button.addEventListener("click", async () => {
+      if (!confirm("Usunąć pozycję cennika?")) return;
       await fetchJson(`/api/price-items/${button.dataset.deletePrice}`, { method: "DELETE" });
+      if (String(state.selectedPriceItemId) === String(button.dataset.deletePrice)) {
+        state.selectedPriceItemId = null;
+        elements.priceItemForm.reset();
+      }
       await refreshPricing();
       showToast("Pozycja cennika usunięta");
     });
@@ -1134,6 +1247,15 @@ function renderPurchaseNeeds() {
       </tr>
     `).join("")
     : `<tr><td colspan="13">Wszystkie aktywne materiały są na poziomie minimum albo powyżej.</td></tr>`;
+}
+
+function buildPurchaseNeedsTelegramText(rows) {
+  const lines = rows.map((row) => {
+    const material = [row.code, row.name].filter(Boolean).join(" - ");
+    const supplier = row.supplier ? ` | ${row.supplier}` : "";
+    return `${material}: zamówić ${formatNumber(row.order_quantity)} ${row.unit || ""}${supplier}`;
+  });
+  return [`Lista zakupów (${rows.length})`, ...lines].join("\n");
 }
 
 async function renderPurchaseNeedFilters() {
@@ -1442,6 +1564,27 @@ function materialSelectLabel(material) {
   ].filter(Boolean).join(" | ");
 }
 
+function cutJobMaterialLabel(job) {
+  const material = state.flat.find((row) => String(row.id) === String(job.material_id));
+  if (material) {
+    return [
+      material.code,
+      material.thickness ? `${formatNumber(material.thickness)} mm` : "",
+      material.length && material.width ? `${formatNumber(material.length)}x${formatNumber(material.width)}` : "",
+      compactMaterialName(material.name)
+    ].filter(Boolean).join(" | ");
+  }
+  return [job.material_code, compactMaterialName(job.material_name)].filter(Boolean).join(" | ");
+}
+
+function compactMaterialName(name) {
+  return String(name || "")
+    .replace(/\bPłyta\s+laminowana\b/gi, "Płyta")
+    .replace(/\bPłyta\s+wiórowa\b/gi, "Płyta")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function normalizeText(value) {
   return String(value || "")
     .replaceAll("ł", "l")
@@ -1495,7 +1638,7 @@ function renderCutJobs() {
       <td>${escapeHtml(row.order_number || "")}</td>
       <td>${escapeHtml(row.customer_name || "")}</td>
       <td>${escapeHtml(row.name)}</td>
-      <td>${escapeHtml([row.material_code, row.material_name].filter(Boolean).join(" - "))}</td>
+      <td>${escapeHtml(cutJobMaterialLabel(row))}</td>
       <td>${escapeHtml(row.status)}</td>
       <td>${formatNumber(row.part_count)}</td>
       <td>${formatNumber(row.area_m2)}</td>
@@ -1734,7 +1877,7 @@ function renderCutTotals(serverTotals) {
     if (part.edge_right) result.edge_mb += width * quantity / 1000;
     return result;
   }, { part_count: 0, area_m2: 0, edge_mb: 0, milling_count: 0, drilling_count: 0, lacquer_m2: 0, other_count: 0 });
-  elements.cutTotals.textContent = `Formatki: ${formatNumber(totals.part_count)} szt. | Płyta: ${formatNumber(totals.area_m2)} m2 | Okleina: ${formatNumber(totals.edge_mb)} mb`;
+  elements.cutTotals.textContent = `Formatki: ${formatNumber(totals.part_count)} szt. | Płyta: ${formatNumber(totals.area_m2)} m2 | Okleina: ${formatNumber(totals.edge_mb)} mb | Frez: ${formatNumber(totals.milling_count)} szt. | Otwory: ${formatNumber(totals.drilling_count)} szt.`;
 }
 
 function renderOrders() {
@@ -1753,11 +1896,32 @@ function renderOrders() {
         <td>${formatMoney(row.total_amount)}</td>
         <td>${formatMoney(row.paid_amount)}</td>
         <td class="${balanceClass}">${formatMoney(row.balance)}</td>
+        <td>
+          <button class="small" data-edit-order="${row.id}" type="button">Edytuj</button>
+          <button class="small danger" data-delete-order="${row.id}" type="button">Usuń</button>
+        </td>
       </tr>
     `;
   }).join("");
   elements.ordersBody.querySelectorAll("tr").forEach((rowElement) => {
-    rowElement.addEventListener("click", () => fillOrderForm(Number(rowElement.dataset.id)));
+    rowElement.addEventListener("click", (event) => {
+      if (event.target.closest("button")) return;
+      fillOrderForm(Number(rowElement.dataset.id));
+    });
+  });
+  elements.ordersBody.querySelectorAll("[data-edit-order]").forEach((button) => {
+    button.addEventListener("click", () => fillOrderForm(Number(button.dataset.editOrder)));
+  });
+  elements.ordersBody.querySelectorAll("[data-delete-order]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (!confirm("Usunąć zamówienie razem z jego pozycjami, wyceną i wpłatami?")) return;
+      await fetchJson(`/api/orders/${button.dataset.deleteOrder}`, { method: "DELETE" });
+      if (String(state.selectedOrderId) === String(button.dataset.deleteOrder)) {
+        await resetOrderWorkspace();
+      }
+      await refreshAll();
+      showToast("Zamówienie usunięte");
+    });
   });
 }
 
@@ -1992,6 +2156,27 @@ function fillCustomerForm(id) {
   for (const field of elements.customerForm.elements) {
     if (!field.name) continue;
     field.value = row[field.name] ?? "";
+  }
+}
+
+function fillPriceItemForm(id) {
+  const row = state.priceItems.find((item) => item.id === id);
+  if (!row) return;
+  state.selectedPriceItemId = id;
+  for (const field of elements.priceItemForm.elements) {
+    if (!field.name) continue;
+    field.value = row[field.name] ?? "";
+  }
+}
+
+function fillOffcutForm(id, rows = []) {
+  const row = rows.find((item) => String(item.id) === String(id));
+  if (!row) return;
+  state.selectedOffcutId = row.id;
+  for (const field of elements.offcutForm.elements) {
+    if (!field.name) continue;
+    if (field.type === "checkbox") field.checked = Boolean(row[field.name]);
+    else field.value = row[field.name] ?? "";
   }
 }
 
@@ -2277,6 +2462,7 @@ async function fetchJson(url, options = {}) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(error.error || response.statusText);
   }
+  if (response.status === 204) return null;
   return response.json();
 }
 

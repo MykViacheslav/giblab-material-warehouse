@@ -493,6 +493,24 @@ app.post("/api/offcuts", (request, response) => {
   response.status(201).json(db.prepare("SELECT * FROM offcuts WHERE id = ?").get(payload.id));
 });
 
+app.put("/api/offcuts/:id", (request, response) => {
+  const id = String(request.params.id || "").trim();
+  const existing = db.prepare("SELECT * FROM offcuts WHERE id = ?").get(id);
+  if (!existing) return response.status(404).json({ error: "Offcut not found" });
+  const payload = normalizeOffcut({ ...existing, ...request.body, id });
+  db.prepare(`
+    UPDATE offcuts
+    SET material_id = ?, code = ?, length = ?, width = ?, quantity = ?, is_business = ?, project_name = ?, project_path = ?, status = ?
+    WHERE id = ?
+  `).run(payload.material_id, payload.code, payload.length, payload.width, payload.quantity, payload.is_business, payload.project_name, payload.project_path, payload.status, id);
+  response.json(db.prepare("SELECT * FROM offcuts WHERE id = ?").get(id));
+});
+
+app.delete("/api/offcuts/:id", (request, response) => {
+  db.prepare("DELETE FROM offcuts WHERE id = ?").run(String(request.params.id || ""));
+  response.status(204).end();
+});
+
 app.post("/api/import/goods", upload.single("goods"), (request, response) => {
   const source = request.file?.buffer || readFileSync(String(request.body.path || defaultGoodsPath));
   const workbook = XLSX.read(source, { type: "buffer", cellDates: false });
@@ -1137,6 +1155,10 @@ app.post("/api/cut-jobs/:id/quote", (request, response) => {
   const materialPrice = toMoneyNumber(request.body?.material_price);
   const cutPrice = toMoneyNumber(request.body?.cut_price);
   const edgePrice = toMoneyNumber(request.body?.edge_price);
+  const millingPrice = toMoneyNumber(request.body?.milling_price);
+  const drillingPrice = toMoneyNumber(request.body?.drilling_price);
+  const lacquerPrice = toMoneyNumber(request.body?.lacquer_price);
+  const otherPrice = toMoneyNumber(request.body?.other_price);
   const insert = db.prepare(`
     INSERT INTO quote_lines (order_id, cut_job_id, description, unit, quantity, unit_price, line_total)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -1146,6 +1168,10 @@ app.post("/api/cut-jobs/:id/quote", (request, response) => {
     if (materialPrice > 0) insert.run(job.order_id, jobId, `Formatki ${job.name} - materiał`, "m2", totals.area_m2, materialPrice, totals.area_m2 * materialPrice);
     if (cutPrice > 0) insert.run(job.order_id, jobId, `Formatki ${job.name} - cięcie`, "szt.", totals.part_count, cutPrice, totals.part_count * cutPrice);
     if (edgePrice > 0 && totals.edge_mb > 0) insert.run(job.order_id, jobId, `Formatki ${job.name} - oklejanie`, "mb", totals.edge_mb, edgePrice, totals.edge_mb * edgePrice);
+    if (millingPrice > 0 && totals.milling_count > 0) insert.run(job.order_id, jobId, `Formatki ${job.name} - frezowanie`, "szt.", totals.milling_count, millingPrice, totals.milling_count * millingPrice);
+    if (drillingPrice > 0 && totals.drilling_count > 0) insert.run(job.order_id, jobId, `Formatki ${job.name} - otwory`, "szt.", totals.drilling_count, drillingPrice, totals.drilling_count * drillingPrice);
+    if (lacquerPrice > 0 && totals.lacquer_m2 > 0) insert.run(job.order_id, jobId, `Formatki ${job.name} - lakierowanie`, "m2", totals.lacquer_m2, lacquerPrice, totals.lacquer_m2 * lacquerPrice);
+    if (otherPrice > 0 && totals.other_count > 0) insert.run(job.order_id, jobId, `Formatki ${job.name} - inne prace`, "szt.", totals.other_count, otherPrice, totals.other_count * otherPrice);
     updateOrderTotalFromQuote(job.order_id);
   });
   const lines = db.prepare("SELECT * FROM quote_lines WHERE cut_job_id = ? ORDER BY id").all(jobId);
