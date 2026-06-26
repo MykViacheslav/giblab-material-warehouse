@@ -10,6 +10,8 @@ import { assertCanUseStock, parseNonNegativeQuantity, parsePositiveQuantity, Sto
 import { applyStockEventToDatabase, listStockEvents, withAvailableStock } from "./src/stockRepository.js";
 import { MATERIAL_CATALOG_COLUMNS, MATERIAL_CATALOG_FIELD_NAMES, normalizeMaterialCatalogFields } from "./src/materialCatalog.js";
 import { commitMaterialImport, previewMaterialImport } from "./src/materialImport.js";
+import { buildCutQuoteLines, normalizeCutQuotePrices } from "./src/cutQuote.js";
+import { getCustomerDeleteBlockers, getMaterialDeleteBlockers, getOrderDeleteBlockers } from "./src/deleteSafety.js";
 import {
   DeliveryError,
   normalizeDelivery,
@@ -441,7 +443,12 @@ app.put("/api/materials/:id", (request, response) => {
 });
 
 app.delete("/api/materials/:id", (request, response) => {
-  db.prepare("DELETE FROM materials WHERE id = ?").run(Number(request.params.id));
+  const id = Number(request.params.id);
+  if (!selectMaterial.get(id)) return response.status(404).json({ error: "Material not found" });
+  const blockers = getMaterialDeleteBlockers(db, id);
+  if (blockers.length) return response.status(409).json({ error: "Material cannot be deleted safely", blockers });
+  db.prepare("DELETE FROM stock WHERE material_id = ?").run(id);
+  db.prepare("DELETE FROM materials WHERE id = ?").run(id);
   response.status(204).end();
 });
 
@@ -507,7 +514,10 @@ app.put("/api/offcuts/:id", (request, response) => {
 });
 
 app.delete("/api/offcuts/:id", (request, response) => {
-  db.prepare("DELETE FROM offcuts WHERE id = ?").run(String(request.params.id || ""));
+  const id = String(request.params.id || "");
+  const existing = db.prepare("SELECT id FROM offcuts WHERE id = ?").get(id);
+  if (!existing) return response.status(404).json({ error: "Offcut not found" });
+  db.prepare("DELETE FROM offcuts WHERE id = ?").run(id);
   response.status(204).end();
 });
 
@@ -613,7 +623,11 @@ app.put("/api/customers/:id", (request, response) => {
 });
 
 app.delete("/api/customers/:id", (request, response) => {
-  db.prepare("DELETE FROM customers WHERE id = ?").run(Number(request.params.id));
+  const id = Number(request.params.id);
+  if (!selectCustomer.get(id)) return response.status(404).json({ error: "Customer not found" });
+  const blockers = getCustomerDeleteBlockers(db, id);
+  if (blockers.length) return response.status(409).json({ error: "Customer cannot be deleted safely", blockers });
+  db.prepare("DELETE FROM customers WHERE id = ?").run(id);
   response.status(204).end();
 });
 
@@ -663,7 +677,11 @@ app.post("/api/orders/:id/payment-status", (request, response) => {
 });
 
 app.delete("/api/orders/:id", (request, response) => {
-  db.prepare("DELETE FROM orders WHERE id = ?").run(Number(request.params.id));
+  const id = Number(request.params.id);
+  if (!selectOrder.get(id)) return response.status(404).json({ error: "Order not found" });
+  const blockers = getOrderDeleteBlockers(db, id);
+  if (blockers.length) return response.status(409).json({ error: "Order cannot be deleted safely", blockers });
+  db.prepare("DELETE FROM orders WHERE id = ?").run(id);
   response.status(204).end();
 });
 
@@ -732,7 +750,10 @@ app.put("/api/price-items/:id", (request, response) => {
 });
 
 app.delete("/api/price-items/:id", (request, response) => {
-  db.prepare("UPDATE price_items SET active = 0 WHERE id = ?").run(Number(request.params.id));
+  const id = Number(request.params.id);
+  const item = db.prepare("SELECT * FROM price_items WHERE id = ?").get(id);
+  if (!item) return response.status(404).json({ error: "Price item not found" });
+  db.prepare("UPDATE price_items SET active = 0 WHERE id = ?").run(id);
   response.status(204).end();
 });
 
@@ -1152,26 +1173,16 @@ app.post("/api/cut-jobs/:id/quote", (request, response) => {
   if (!job) return response.status(404).json({ error: "Cut job not found" });
   if (!job.order_id) return response.status(400).json({ error: "Cut job is not linked to an order" });
   const totals = getCutJobTotals(jobId);
-  const materialPrice = toMoneyNumber(request.body?.material_price);
-  const cutPrice = toMoneyNumber(request.body?.cut_price);
-  const edgePrice = toMoneyNumber(request.body?.edge_price);
-  const millingPrice = toMoneyNumber(request.body?.milling_price);
-  const drillingPrice = toMoneyNumber(request.body?.drilling_price);
-  const lacquerPrice = toMoneyNumber(request.body?.lacquer_price);
-  const otherPrice = toMoneyNumber(request.body?.other_price);
+  const quoteRows = buildCutQuoteLines(job, totals, normalizeCutQuotePrices(request.body));
   const insert = db.prepare(`
     INSERT INTO quote_lines (order_id, cut_job_id, description, unit, quantity, unit_price, line_total)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
   runInTransaction(() => {
     db.prepare("DELETE FROM quote_lines WHERE cut_job_id = ?").run(jobId);
-    if (materialPrice > 0) insert.run(job.order_id, jobId, `Formatki ${job.name} - materiał`, "m2", totals.area_m2, materialPrice, totals.area_m2 * materialPrice);
-    if (cutPrice > 0) insert.run(job.order_id, jobId, `Formatki ${job.name} - cięcie`, "szt.", totals.part_count, cutPrice, totals.part_count * cutPrice);
-    if (edgePrice > 0 && totals.edge_mb > 0) insert.run(job.order_id, jobId, `Formatki ${job.name} - oklejanie`, "mb", totals.edge_mb, edgePrice, totals.edge_mb * edgePrice);
-    if (millingPrice > 0 && totals.milling_count > 0) insert.run(job.order_id, jobId, `Formatki ${job.name} - frezowanie`, "szt.", totals.milling_count, millingPrice, totals.milling_count * millingPrice);
-    if (drillingPrice > 0 && totals.drilling_count > 0) insert.run(job.order_id, jobId, `Formatki ${job.name} - otwory`, "szt.", totals.drilling_count, drillingPrice, totals.drilling_count * drillingPrice);
-    if (lacquerPrice > 0 && totals.lacquer_m2 > 0) insert.run(job.order_id, jobId, `Formatki ${job.name} - lakierowanie`, "m2", totals.lacquer_m2, lacquerPrice, totals.lacquer_m2 * lacquerPrice);
-    if (otherPrice > 0 && totals.other_count > 0) insert.run(job.order_id, jobId, `Formatki ${job.name} - inne prace`, "szt.", totals.other_count, otherPrice, totals.other_count * otherPrice);
+    quoteRows.forEach((row) => {
+      insert.run(job.order_id, jobId, row.description, row.unit, row.quantity, row.unit_price, row.line_total);
+    });
     updateOrderTotalFromQuote(job.order_id);
   });
   const lines = db.prepare("SELECT * FROM quote_lines WHERE cut_job_id = ? ORDER BY id").all(jobId);

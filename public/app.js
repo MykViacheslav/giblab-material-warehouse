@@ -123,6 +123,11 @@ const elements = {
 const treeHiddenSetting = localStorage.getItem("giblabTreeHidden") === "1";
 setTreeHidden(treeHiddenSetting);
 
+window.addEventListener("unhandledrejection", (event) => {
+  const message = event.reason?.message || "Operacja nie powiodła się";
+  showToast(message);
+});
+
 document.querySelectorAll(".tab").forEach((button) => {
   button.addEventListener("click", () => {
     activateTab(button.dataset.tab);
@@ -2460,7 +2465,10 @@ async function fetchJson(url, options = {}) {
   const response = await fetch(url, options);
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(error.error || response.statusText);
+    const blockerText = Array.isArray(error.blockers) && error.blockers.length
+      ? ` ${error.blockers.map((blocker) => blocker.message).join(" ")}`
+      : "";
+    throw new Error(`${error.error || response.statusText}${blockerText}`.trim());
   }
   if (response.status === 204) return null;
   return response.json();
