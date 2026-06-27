@@ -13,6 +13,14 @@ import { commitMaterialImport, previewMaterialImport } from "./src/materialImpor
 import { buildCutQuoteLines, normalizeCutQuotePrices } from "./src/cutQuote.js";
 import { getCustomerDeleteBlockers, getMaterialDeleteBlockers, getOrderDeleteBlockers } from "./src/deleteSafety.js";
 import {
+  createBackup,
+  createDailyAutoBackup,
+  enforceBackupRetention,
+  listBackups,
+  resolveBackupPath,
+  restoreBackup
+} from "./src/backupService.js";
+import {
   DeliveryError,
   normalizeDelivery,
   normalizeDeliveryCorrection,
@@ -35,7 +43,9 @@ const dbPath = process.env.WAREHOUSE_DB_PATH
   ? path.resolve(process.env.WAREHOUSE_DB_PATH)
   : path.join(dataDir, "warehouse.sqlite");
 const dbDir = path.dirname(dbPath);
+const backupDir = path.join(dataDir, "backups");
 const defaultGoodsPath = process.env.GIBLAB_GOODS_PATH || "C:\\GibLabLocal\\goods.xls";
+let restoreRequiresRestart = false;
 
 if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
 if (!existsSync(dbDir)) mkdirSync(dbDir, { recursive: true });
@@ -278,6 +288,13 @@ ensureColumn("cut_parts", "work_lacquer", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("cut_parts", "work_other", "INTEGER NOT NULL DEFAULT 0");
 normalizeExistingTextValues();
 seedDefaultPriceItems();
+try {
+  db.exec("PRAGMA wal_checkpoint(FULL)");
+  createDailyAutoBackup({ dbPath, backupDir });
+  enforceBackupRetention({ backupDir, keep: 30 });
+} catch (error) {
+  console.warn("Could not create startup backup:", error.message);
+}
 
 const selectMaterials = db.prepare("SELECT * FROM materials ORDER BY sort_order, id");
 const selectMaterial = db.prepare("SELECT * FROM materials WHERE id = ?");
@@ -361,6 +378,12 @@ const selectOrder = db.prepare(`
 app.use(express.json({ limit: "4mb" }));
 app.use("/giblab/remainders", express.text({ type: "*/*", limit: "4mb" }));
 app.use((request, response, next) => {
+  if (restoreRequiresRestart && request.path !== "/api/health") {
+    return response.status(503).json({ error: "Database was restored. Please restart the server.", restart_required: true });
+  }
+  next();
+});
+app.use((request, response, next) => {
   if (request.path === "/" || request.path.endsWith(".html") || request.path.endsWith(".js") || request.path.endsWith(".css")) {
     response.set("Cache-Control", "no-store");
   }
@@ -376,7 +399,56 @@ app.use(express.static(path.join(rootDir, "public"), {
 }));
 
 app.get("/api/health", (request, response) => {
-  response.json({ ok: true, dbPath, defaultGoodsPath });
+  response.json({ ok: true, dbPath, defaultGoodsPath, restart_required: restoreRequiresRestart });
+});
+
+app.get("/api/backups", (request, response) => {
+  response.json(listBackups(backupDir));
+});
+
+app.post("/api/backups", (request, response) => {
+  db.exec("PRAGMA wal_checkpoint(FULL)");
+  const backup = createBackup({ dbPath, backupDir });
+  enforceBackupRetention({ backupDir, keep: 30 });
+  response.status(201).json({ filename: backup.filename, message: "Backup created" });
+});
+
+app.get("/api/backups/:filename/download", (request, response) => {
+  try {
+    const filename = request.params.filename;
+    const filePath = resolveBackupPath(backupDir, filename);
+    if (!existsSync(filePath)) return response.status(404).json({ error: "Backup file not found" });
+    response.setHeader("Content-Type", "application/octet-stream");
+    response.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    response.sendFile(filePath);
+  } catch (error) {
+    response.status(400).json({ error: error.message || "Invalid backup filename" });
+  }
+});
+
+app.post("/api/backups/:filename/restore", (request, response) => {
+  let databaseClosed = false;
+  try {
+    const backupPath = resolveBackupPath(backupDir, request.params.filename);
+    if (!existsSync(backupPath)) return response.status(404).json({ error: "Backup file not found" });
+
+    db.exec("PRAGMA wal_checkpoint(FULL)");
+    db.close();
+    databaseClosed = true;
+    const result = restoreBackup({ dbPath, backupDir, filename: request.params.filename });
+    restoreRequiresRestart = true;
+    response.json({
+      ...result,
+      message: "Database restored. Please restart the server.",
+      restart_required: true
+    });
+  } catch (error) {
+    if (databaseClosed) restoreRequiresRestart = true;
+    response.status(400).json({
+      error: error.message || "Could not restore backup",
+      restart_required: restoreRequiresRestart
+    });
+  }
 });
 
 app.get("/api/materials", (request, response) => {

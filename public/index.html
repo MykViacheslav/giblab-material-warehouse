@@ -50,6 +50,7 @@
           <button class="tab" data-tab="deliveries">Dostawy</button>
           <button class="tab" data-tab="purchase">Zakupy</button>
           <button class="tab" data-tab="offcuts">Resztki</button>
+          <button class="tab" data-tab="backup">Backup</button>
           <button class="tab" data-tab="project">Import .project</button>
         </div>
 
@@ -806,6 +807,28 @@
             </table>
           </div>
           <pre id="remainderLogs" class="log-panel"></pre>
+        </section>
+
+        <section id="backupTab" class="tab-page">
+          <div class="toolbar-row">
+            <button id="createBackupBtn" type="button">Utwórz backup</button>
+            <button id="refreshBackupsBtn" type="button">Odśwież</button>
+            <span id="backupStatus" class="hint"></span>
+          </div>
+          <p class="hint">Backup zapisuje kopię bazy SQLite w folderze data/backups. Przed przywróceniem program tworzy dodatkową kopię aktualnej bazy.</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Plik</th>
+                  <th>Rozmiar</th>
+                  <th>Data</th>
+                  <th>Akcje</th>
+                </tr>
+              </thead>
+              <tbody id="backupsBody"></tbody>
+            </table>
+          </div>
         </section>
 
         <section id="projectTab" class="tab-page">

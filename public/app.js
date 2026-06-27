@@ -14,6 +14,7 @@ const state = {
   deliveryCorrections: [],
   deliveryCorrectionLines: [],
   purchaseNeeds: { rows: [], summary: null },
+  backups: [],
   materialImportRows: [],
   selectedId: null,
   selectedCustomerId: null,
@@ -78,6 +79,10 @@ const elements = {
   refreshPurchaseNeedsBtn: document.querySelector("#refreshPurchaseNeedsBtn"),
   exportPurchaseNeedsCsvBtn: document.querySelector("#exportPurchaseNeedsCsvBtn"),
   sendPurchaseNeedsTelegramBtn: document.querySelector("#sendPurchaseNeedsTelegramBtn"),
+  createBackupBtn: document.querySelector("#createBackupBtn"),
+  refreshBackupsBtn: document.querySelector("#refreshBackupsBtn"),
+  backupsBody: document.querySelector("#backupsBody"),
+  backupStatus: document.querySelector("#backupStatus"),
   offcutForm: document.querySelector("#offcutForm"),
   supplyForm: document.querySelector("#supplyForm"),
   suppliesBody: document.querySelector("#suppliesBody"),
@@ -589,6 +594,18 @@ elements.sendPurchaseNeedsTelegramBtn?.addEventListener("click", () => {
   window.open(`https://t.me/share/url?url=&text=${encodeURIComponent(text)}`, "_blank");
 });
 
+elements.createBackupBtn?.addEventListener("click", async () => {
+  const result = await postJson("/api/backups", {});
+  elements.backupStatus.textContent = `Utworzono backup: ${result.filename}`;
+  await refreshBackups();
+  showToast("Backup utworzony");
+});
+
+elements.refreshBackupsBtn?.addEventListener("click", async () => {
+  await refreshBackups();
+  showToast("Lista backupów odświeżona");
+});
+
 [elements.purchaseSearch, elements.purchaseSupplierFilter, elements.purchaseProducerFilter, elements.purchaseTypeFilter].forEach((input) => {
   input?.addEventListener("change", refreshPurchaseNeeds);
 });
@@ -663,6 +680,7 @@ async function refreshAll() {
   await refreshSupplies();
   await refreshDeliveries();
   await refreshPurchaseNeeds();
+  await refreshBackups();
   await refreshCutting();
   await refreshOffcuts();
   renderCalendar();
@@ -720,6 +738,12 @@ async function refreshPurchaseNeeds() {
   state.purchaseNeeds = await fetchJson(`/api/purchase-needs${purchaseFilterQuery()}`);
   await renderPurchaseNeedFilters();
   renderPurchaseNeeds();
+}
+
+async function refreshBackups() {
+  if (!elements.backupsBody) return;
+  state.backups = await fetchJson("/api/backups");
+  renderBackups();
 }
 
 async function loadDeliveryLines(deliveryId) {
@@ -1261,6 +1285,37 @@ function buildPurchaseNeedsTelegramText(rows) {
     return `${material}: zamówić ${formatNumber(row.order_quantity)} ${row.unit || ""}${supplier}`;
   });
   return [`Lista zakupów (${rows.length})`, ...lines].join("\n");
+}
+
+function renderBackups() {
+  if (!elements.backupsBody) return;
+  elements.backupsBody.innerHTML = state.backups.length
+    ? state.backups.map((backup) => `
+      <tr>
+        <td>${escapeHtml(backup.filename)}</td>
+        <td>${formatFileSize(backup.size_bytes)}</td>
+        <td>${escapeHtml(formatBackupDate(backup.created_at))}</td>
+        <td>
+          <button class="small" data-download-backup="${escapeHtml(backup.filename)}" type="button">Pobierz</button>
+          <button class="small danger" data-restore-backup="${escapeHtml(backup.filename)}" type="button">Przywróć</button>
+        </td>
+      </tr>
+    `).join("")
+    : `<tr><td colspan="4">Brak backupów.</td></tr>`;
+  elements.backupsBody.querySelectorAll("[data-download-backup]").forEach((button) => {
+    button.addEventListener("click", () => {
+      window.location.href = `/api/backups/${encodeURIComponent(button.dataset.downloadBackup)}/download`;
+    });
+  });
+  elements.backupsBody.querySelectorAll("[data-restore-backup]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const ok = confirm("Przywrócenie backupu zastąpi aktualną bazę danych. Przed przywróceniem program utworzy kopię bezpieczeństwa. Kontynuować?");
+      if (!ok) return;
+      const result = await postJson(`/api/backups/${encodeURIComponent(button.dataset.restoreBackup)}/restore`, {});
+      elements.backupStatus.textContent = `${result.message} Backup przed przywróceniem: ${result.pre_restore_backup}`;
+      showToast("Backup przywrócony. Zrestartuj program.");
+    });
+  });
 }
 
 async function renderPurchaseNeedFilters() {
@@ -2545,6 +2600,20 @@ function formatNumber(value) {
 
 function formatMoney(value) {
   return Number(value || 0).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatFileSize(value) {
+  const bytes = Number(value || 0);
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatBackupDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString("pl-PL");
 }
 
 function parseDecimal(value) {

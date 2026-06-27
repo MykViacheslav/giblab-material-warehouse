@@ -137,6 +137,20 @@ The report can be filtered by supplier, producer, material type and search text.
 
 Use `Eksport CSV` to download the currently filtered purchase needs list.
 
+## Backups
+
+The `Backup` tab creates SQLite database copies in:
+
+```text
+data\backups
+```
+
+The server also creates one automatic daily backup on startup.
+
+Restoring a backup first creates a pre-restore copy of the current database, then replaces `data\warehouse.sqlite`.
+
+After restore, restart the server before continuing work.
+
 ## Tests
 
 ```bash
