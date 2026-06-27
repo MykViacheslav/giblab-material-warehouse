@@ -446,6 +446,32 @@ tr.stock-alert {
   margin-bottom: 12px;
 }
 
+.selection-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin: 0 0 10px;
+}
+
+button.outline-action {
+  background: #fff;
+  border: 2px solid var(--red);
+  color: var(--red);
+  font-weight: 700;
+  letter-spacing: 0;
+  min-width: 150px;
+  text-transform: uppercase;
+}
+
+button.outline-action:hover {
+  background: #fff1f0;
+}
+
+button.danger-outline {
+  border-color: #d10000;
+  color: #d10000;
+}
+
 .cut-text-import {
   align-items: stretch;
   display: grid;

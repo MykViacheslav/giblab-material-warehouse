@@ -121,6 +121,10 @@
             <button type="submit">Zapisz klienta</button>
             <button id="clearCustomerBtn" type="button">Wyczyść</button>
           </form>
+          <div class="selection-actions">
+            <button id="editSelectedCustomerBtn" class="outline-action" type="button">EDYTUJ</button>
+            <button id="deleteSelectedCustomerBtn" class="outline-action danger-outline" type="button">USUŃ</button>
+          </div>
           <div class="table-wrap compact-table">
             <table>
               <thead>
@@ -133,7 +137,6 @@
                   <th>Adres</th>
                   <th>Nieopłacone</th>
                   <th>Saldo</th>
-                  <th>Akcje</th>
                 </tr>
               </thead>
               <tbody id="customersBody"></tbody>
@@ -204,6 +207,11 @@
             <textarea id="notifyText" readonly placeholder="Kliknij zamówienie, aby przygotować wiadomość do klienta."></textarea>
           </div>
 
+          <div class="selection-actions">
+            <button id="editSelectedOrderBtn" class="outline-action" type="button">EDYTUJ</button>
+            <button id="deleteSelectedOrderBtn" class="outline-action danger-outline" type="button">USUŃ</button>
+          </div>
+
           <div class="table-wrap">
             <table>
               <thead>
@@ -218,7 +226,6 @@
                   <th>Wartość</th>
                   <th>Wpłacono</th>
                   <th>Saldo</th>
-                  <th>Akcje</th>
                 </tr>
               </thead>
               <tbody id="ordersBody"></tbody>
@@ -260,6 +267,10 @@
                 <button type="submit">Zapisz w cenniku</button>
                 <button id="clearPriceItemBtn" type="button">Nowa cena</button>
               </form>
+              <div class="selection-actions">
+                <button id="editSelectedPriceBtn" class="outline-action" type="button">EDYTUJ</button>
+                <button id="deleteSelectedPriceBtn" class="outline-action danger-outline" type="button">USUŃ</button>
+              </div>
               <div class="table-wrap quote-table">
                 <table>
                   <thead>
@@ -270,7 +281,6 @@
                       <th>Nazwa</th>
                       <th>J.m.</th>
                       <th>Cena</th>
-                      <th></th>
                     </tr>
                   </thead>
                   <tbody id="priceItemsBody"></tbody>
@@ -505,6 +515,10 @@
             <button type="submit">Zapisz pozycję</button>
             <button id="clearFormBtn" type="button">Wyczyść</button>
           </form>
+          <div class="selection-actions">
+            <button id="editSelectedMaterialBtn" class="outline-action" type="button">EDYTUJ</button>
+            <button id="deleteSelectedMaterialBtn" class="outline-action danger-outline" type="button">USUŃ</button>
+          </div>
 
           <section class="panel compact-panel">
             <h3>Import katalogu materiałów</h3>
@@ -574,7 +588,6 @@
                   <th>Min.</th>
                   <th>Lok.</th>
                   <th>Akt.</th>
-                  <th>Akcje</th>
                 </tr>
               </thead>
               <tbody id="materialsBody"></tbody>
@@ -788,6 +801,10 @@
             <label class="check"><input name="is_business" type="checkbox"> Delowa</label>
             <button type="submit">Dodaj resztkę</button>
           </form>
+          <div class="selection-actions">
+            <button id="editSelectedOffcutBtn" class="outline-action" type="button">EDYTUJ</button>
+            <button id="deleteSelectedOffcutBtn" class="outline-action danger-outline" type="button">USUŃ</button>
+          </div>
           <div class="table-wrap">
             <table>
               <thead>
@@ -800,7 +817,6 @@
                   <th>Typ</th>
                   <th>Projekt</th>
                   <th>Status</th>
-                  <th>Akcje</th>
                 </tr>
               </thead>
               <tbody id="offcutsBody"></tbody>
