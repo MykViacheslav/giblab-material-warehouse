@@ -17,6 +17,14 @@ http://localhost:3080/
 
 ## Uruchomienie jako normalne okno programu
 
+Kliknij:
+
+```text
+Magazyn GibLab.exe
+```
+
+albo skrót `Magazyn GibLab` na pulpicie.
+
 Na głównym komputerze uruchom:
 
 ```powershell
