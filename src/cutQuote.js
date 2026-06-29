@@ -13,7 +13,7 @@ export function normalizeCutQuotePrices(input = {}) {
 export function buildCutQuoteLines(job, totals, prices) {
   const jobName = job?.name || "formatki";
   const rows = [
-    line(prices.material_price, totals.area_m2, "m2", `Formatki ${jobName} - materiał`),
+    line(prices.material_price, totals.board_sheets ? totals.board_sheets : totals.area_m2, totals.board_sheets ? "ark." : "m2", `Formatki ${jobName} - materiał`),
     line(prices.cut_price, totals.part_count, "szt.", `Formatki ${jobName} - cięcie`),
     line(prices.edge_price, totals.edge_mb, "mb", `Formatki ${jobName} - oklejanie`),
     line(prices.milling_price, totals.milling_count, "szt.", `Formatki ${jobName} - frezowanie`),

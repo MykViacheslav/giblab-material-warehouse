@@ -1,4 +1,4 @@
-const state = {
+﻿const state = {
   flat: [],
   tree: [],
   customers: [],
@@ -25,6 +25,7 @@ const state = {
   selectedCutJobId: null,
   selectedDeliveryId: null,
   selectedDeliveryCorrectionId: null,
+  activeDashboardPanel: "today",
   collapsed: new Set()
 };
 
@@ -112,9 +113,13 @@ const elements = {
   cutTotals: document.querySelector("#cutTotals"),
   cutMaterialChips: document.querySelector("#cutMaterialChips"),
   cutMaterialSearch: document.querySelector("#cutMaterialSearch"),
+  cutEdgeMaterialSearch: document.querySelector("#cutEdgeMaterialSearch"),
   cutPhotoFile: document.querySelector("#cutPhotoFile"),
   cutTextImport: document.querySelector("#cutTextImport"),
   cutTextImportStatus: document.querySelector("#cutTextImportStatus"),
+  cutTextImportToggleBtn: document.querySelector("#cutTextImportToggleBtn"),
+  cutTextImportPanel: document.querySelector("#cutTextImportPanel"),
+  importExportedProjectBtn: document.querySelector("#importExportedProjectBtn"),
   cutProducerFilter: document.querySelector("#cutProducerFilter"),
   cutThicknessFilter: document.querySelector("#cutThicknessFilter"),
   calcLength: document.querySelector("#calcLength"),
@@ -123,7 +128,9 @@ const elements = {
   notifyText: document.querySelector("#notifyText"),
   newOrderBtn: document.querySelector("#newOrderBtn"),
   addOrderPositionBtn: document.querySelector("#addOrderPositionBtn"),
+  goToOrderCuttingBtn: document.querySelector("#goToOrderCuttingBtn"),
   newCutJobBtn: document.querySelector("#newCutJobBtn"),
+  deleteCutJobBtn: document.querySelector("#deleteCutJobBtn"),
   editSelectedMaterialBtn: document.querySelector("#editSelectedMaterialBtn"),
   deleteSelectedMaterialBtn: document.querySelector("#deleteSelectedMaterialBtn"),
   editSelectedOffcutBtn: document.querySelector("#editSelectedOffcutBtn"),
@@ -132,6 +139,8 @@ const elements = {
   payerCustomerSelect: document.querySelector("#payerCustomerSelect"),
   remainderStatus: document.querySelector("#remainderStatus"),
   remainderLogs: document.querySelector("#remainderLogs"),
+  remaindersUrlText: document.querySelector("#remaindersUrlText"),
+  copyRemaindersUrlBtn: document.querySelector("#copyRemaindersUrlBtn"),
   toast: document.querySelector("#toast")
 };
 
@@ -149,10 +158,64 @@ document.querySelectorAll(".tab").forEach((button) => {
   });
 });
 
+document.querySelectorAll("[data-dashboard-target]").forEach((button) => {
+  button.addEventListener("click", () => {
+    setDashboardPanel(button.dataset.dashboardTarget);
+  });
+});
+
+elements.dashboardCards?.addEventListener("click", (event) => {
+  const card = event.target.closest("[data-dashboard-target]");
+  if (!card) return;
+  setDashboardPanel(card.dataset.dashboardTarget);
+});
+
 function activateTab(tabName) {
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === tabName));
   document.querySelectorAll(".tab-page").forEach((page) => page.classList.remove("active"));
   document.querySelector(`#${tabName}Tab`)?.classList.add("active");
+}
+
+function setDashboardPanel(panelName) {
+  if (!["today", "stock", "payments"].includes(panelName)) return;
+  state.activeDashboardPanel = panelName;
+  document.querySelectorAll("[data-dashboard-panel]").forEach((panel) => {
+    panel.classList.toggle("active", panel.dataset.dashboardPanel === panelName);
+  });
+  document.querySelectorAll("[data-dashboard-target]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.dashboardTarget === panelName);
+  });
+}
+
+function setCutTextImportPanel(open) {
+  if (!elements.cutTextImportPanel) return;
+  elements.cutTextImportPanel.classList.toggle("open", Boolean(open));
+  if (elements.cutTextImportToggleBtn) {
+    elements.cutTextImportToggleBtn.classList.toggle("active", Boolean(open));
+    elements.cutTextImportToggleBtn.textContent = open ? "Ukryj import tekst / zdjęcie" : "Import tekst / zdjęcie";
+  }
+  if (open) {
+    setTimeout(() => elements.cutTextImport?.focus?.(), 0);
+  }
+}
+
+async function importExportedProjectResult() {
+  const orderId = Number(elements.cutJobForm.elements.order_id.value || state.selectedOrderId || 0);
+  const jobId = Number(state.selectedCutJobId || 0);
+  if (!orderId && !jobId) return showToast("Najpierw wybierz zamówienie albo pozycję formatek");
+  const url = orderId ? `/api/orders/${orderId}/import-exported-project` : `/api/cut-jobs/${jobId}/import-exported-project`;
+  const result = await postJson(url, {});
+  await refreshCutting();
+  await refreshOffcuts();
+  if (state.selectedCutJobId) {
+    await loadCutParts(state.selectedCutJobId);
+    renderCutTotals();
+  }
+  const board = result.totalBoardSheets ? `${formatNumber(result.totalBoardSheets)} ark.` : "0 ark.";
+  const boardM2 = result.totalBoardM2 ? `${formatNumber(result.totalBoardM2)} m2` : "0 m2";
+  const edge = result.totalEdgeMeters ? `${formatNumber(result.totalEdgeMeters)} mb` : "0 mb";
+  elements.cutStatus.textContent = `Odebrano wynik GibLab z pliku: ${result.path}. Do wyceny: płyta ${board} / ${boardM2}, okleina ${edge}.`;
+  showToast("Wynik GibLab pobrany do wyceny");
 }
 
 elements.hideTreeBtn.addEventListener("click", () => setTreeHidden(true));
@@ -216,6 +279,7 @@ document.querySelector("#clearCustomerBtn").addEventListener("click", () => {
 document.querySelector("#clearOrderBtn").addEventListener("click", resetOrderWorkspace);
 elements.newOrderBtn.addEventListener("click", resetOrderWorkspace);
 elements.addOrderPositionBtn.addEventListener("click", openCutPositionForSelectedOrder);
+elements.goToOrderCuttingBtn?.addEventListener("click", openSelectedOrderCutting);
 
 elements.editSelectedCustomerBtn?.addEventListener("click", () => {
   if (!state.selectedCustomerId) return showToast("Najpierw zaznacz klienta");
@@ -365,6 +429,8 @@ elements.newCutJobBtn.addEventListener("click", () => {
   showToast("Nowa pozycja gotowa do wpisania");
 });
 
+elements.deleteCutJobBtn?.addEventListener("click", deleteSelectedCutJob);
+
 elements.cutPartForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!state.selectedCutJobId) return showToast("Najpierw wybierz albo zapisz zlecenie formatek");
@@ -400,14 +466,33 @@ document.querySelector("#importCutTextBtn").addEventListener("click", importCutP
 
 elements.cutPhotoFile.addEventListener("change", importCutTextFromPhoto);
 elements.cutTextImport.addEventListener("input", updateCutTextImportStatus);
+elements.cutTextImportToggleBtn?.addEventListener("click", () => {
+  setCutTextImportPanel(!elements.cutTextImportPanel?.classList.contains("open"));
+});
+elements.importExportedProjectBtn?.addEventListener("click", importExportedProjectResult);
 
 document.querySelector("#exportCutExcelBtn").addEventListener("click", async () => {
-  if (!state.selectedCutJobId) return showToast("Najpierw wybierz zlecenie formatek");
+  const orderId = Number(elements.cutJobForm.elements.order_id.value || state.selectedOrderId || 0);
+  if (orderId) {
+    const result = await postJson(`/api/orders/${orderId}/export-project`, {});
+    await postJson(`/api/orders/${orderId}/open-export-folder`, {});
+    await refreshCutting();
+    elements.cutStatus.textContent = `Plik GibLab ca?ego zam?wienia: ${result.target}. Od?wie? widok w GibLab!`;
+    alert(`Zapisano plik ca?ego zam?wienia:
+${result.target}
+
+Aby zobaczy? go w programie GibLab, przejd? tam i kliknij przycisk "????????" (Od?wie?) po lewej stronie!`);
+    return;
+  }
+  if (!state.selectedCutJobId) return showToast("Najpierw wybierz zam?wienie albo zlecenie formatek");
   const result = await postJson(`/api/cut-jobs/${state.selectedCutJobId}/export-excel`, {});
-  const folder = await postJson(`/api/cut-jobs/${state.selectedCutJobId}/open-export-folder`, {});
+  await postJson(`/api/cut-jobs/${state.selectedCutJobId}/open-export-folder`, {});
   await refreshCutting();
-  elements.cutStatus.textContent = `Plik dla GibLab: ${result.target}. W GibLab kliknij Import z Excel i wybierz ten plik z folderu: ${folder.folder}`;
-  showToast(`Wyeksportowano ${result.exported} formatek do Excela`);
+  elements.cutStatus.textContent = `Plik GibLab: ${result.target}. Od?wie? widok w GibLab!`;
+  alert(`Zapisano plik:
+${result.target}
+
+Aby zobaczy? go w programie GibLab, przejd? tam i kliknij przycisk "????????" (Od?wie?) po lewej stronie!`);
 });
 
 
@@ -470,6 +555,7 @@ document.querySelector("#notifyTelegramBtn").addEventListener("click", () => ope
 document.querySelector("#notifyEmailBtn").addEventListener("click", () => openNotifyLink("email"));
 document.querySelector("#importLatestProjectBtn").addEventListener("click", importLatestProject);
 document.querySelector("#showRemainderLogsBtn").addEventListener("click", showRemainderLogs);
+elements.copyRemaindersUrlBtn?.addEventListener("click", copyRemaindersUrl);
 
 elements.payerCustomerSelect.addEventListener("change", () => {
   const customer = state.customers.find((item) => String(item.id) === elements.payerCustomerSelect.value);
@@ -490,11 +576,11 @@ elements.cutJobForm.elements.material_id.addEventListener("change", () => {
   if (material) applyCutJobMaterial(material);
 });
 
-elements.cutPartForm.elements.material_id.addEventListener("change", () => {
-  applyCutPartMaterial(elements.cutPartForm.elements.material_id.value);
-});
+elements.cutPartForm.elements.material_id.addEventListener("change", (e) => applyCutPartMaterial(e.target.value));
+elements.cutPartForm.elements.edge_material_id.addEventListener("change", (e) => applyCutPartEdgeMaterial(e.target.value));
 
 elements.cutMaterialSearch.addEventListener("input", renderCutMaterialLists);
+elements.cutEdgeMaterialSearch.addEventListener("input", renderEdgeMaterialLists);
 elements.cutProducerFilter.addEventListener("change", renderCutMaterialLists);
 elements.cutThicknessFilter.addEventListener("change", renderCutMaterialLists);
 
@@ -814,6 +900,7 @@ async function refreshCutting() {
   state.cutJobs = await fetchJson("/api/cut-jobs");
   renderCutMaterialFilters();
   renderCutMaterialLists();
+  renderEdgeMaterialLists();
   renderCutJobs();
   if (state.selectedCutJobId) await loadCutParts(state.selectedCutJobId);
   renderDashboard();
@@ -1564,6 +1651,27 @@ function renderCutMaterialLists() {
   renderCutPartMaterialSelect();
 }
 
+function getFilteredEdgeMaterials() {
+  const query = normalizeText(elements.cutEdgeMaterialSearch.value);
+  return state.flat.filter((row) => {
+    if (row.isfolder) return false;
+    const searchText = normalizeText(`${row.code} ${row.name}`);
+    return !query || searchText.includes(query);
+  });
+}
+
+function renderEdgeMaterialLists() {
+  const materials = getFilteredEdgeMaterials();
+  const renderSelect = (select) => {
+    if(!select) return;
+    const current = select.value;
+    select.innerHTML = `<option value="">Wybierz okleinę z bazy</option>` + materials.map((m) => `<option value="${m.id}">${escapeHtml(m.code + ' - ' + m.name)}</option>`).join("");
+    if(materials.some((m) => String(m.id) === current)) select.value = current;
+  };
+  renderSelect(elements.cutJobForm.elements.edge_material_id);
+  renderSelect(elements.cutPartForm.elements.edge_material_id);
+}
+
 function renderCutMaterialFilters() {
   const currentProducer = elements.cutProducerFilter.value;
   const currentThickness = elements.cutThicknessFilter.value;
@@ -1632,6 +1740,19 @@ function normalizeText(value) {
     .toLowerCase();
 }
 
+function applyCutPartEdgeMaterial(id) {
+  const material = state.flat.find((item) => String(item.id) === String(id));
+  if (!material || material.isfolder) return;
+  const field = (name) => elements.cutPartForm.querySelector(`[name="${name}"]`);
+  if (field("edge_material_id")) field("edge_material_id").value = String(material.id);
+  if (field("edge_material_code")) field("edge_material_code").value = material.code || "";
+  if (field("edge_material_name")) field("edge_material_name").value = material.name || "";
+  if (elements.cutJobForm.elements.edge_material_id) {
+    elements.cutJobForm.elements.edge_material_id.value = String(material.id);
+    elements.cutJobForm.elements.edge_material_name.value = material.name || "";
+  }
+}
+
 function applyCutPartMaterial(id) {
   const material = state.flat.find((item) => String(item.id) === String(id));
   if (!material || material.isfolder) return;
@@ -1679,6 +1800,8 @@ function renderCutJobs() {
       <td>${escapeHtml(row.status)}</td>
       <td>${formatNumber(row.part_count)}</td>
       <td>${formatNumber(row.area_m2)}</td>
+      <td>${row.board_sheets_actual > 0 || row.board_m2_actual > 0 ? `${formatNumber(row.board_sheets_actual)} ark. / ${formatNumber(row.board_m2_actual)} m2` : "-"}</td>
+      <td>${row.edge_meters_actual > 0 ? `${formatNumber(row.edge_meters_actual)} mb` : "-"}</td>
     </tr>
   `).join("");
   elements.cutJobsBody.querySelectorAll("tr").forEach((rowElement) => {
@@ -1912,9 +2035,24 @@ function renderCutTotals(serverTotals) {
     if (part.edge_bottom) result.edge_mb += length * quantity / 1000;
     if (part.edge_left) result.edge_mb += width * quantity / 1000;
     if (part.edge_right) result.edge_mb += width * quantity / 1000;
+    result.milling_count += part.work_milling ? quantity : 0;
+    result.drilling_count += part.work_drilling ? quantity : 0;
+    result.lacquer_m2 += part.work_lacquer ? length * width * quantity / 1000000 : 0;
+    result.other_count += part.work_other ? quantity : 0;
     return result;
   }, { part_count: 0, area_m2: 0, edge_mb: 0, milling_count: 0, drilling_count: 0, lacquer_m2: 0, other_count: 0 });
-  elements.cutTotals.textContent = `Formatki: ${formatNumber(totals.part_count)} szt. | Płyta: ${formatNumber(totals.area_m2)} m2 | Okleina: ${formatNumber(totals.edge_mb)} mb | Frez: ${formatNumber(totals.milling_count)} szt. | Otwory: ${formatNumber(totals.drilling_count)} szt.`;
+
+  const currentJob = state.selectedCutJobId ? state.cutJobs.find(j => j.id === state.selectedCutJobId) : null;
+  if (currentJob) {
+    if (currentJob.edge_meters_actual > 0) totals.edge_mb = currentJob.edge_meters_actual;
+    if (currentJob.board_sheets_actual > 0) totals.board_sheets = currentJob.board_sheets_actual;
+    if (currentJob.board_m2_actual > 0) totals.board_m2_actual = currentJob.board_m2_actual;
+  }
+
+  const boardText = totals.board_sheets
+    ? `${formatNumber(totals.board_sheets)} ark. / ${formatNumber(totals.board_m2_actual || totals.area_m2)} m2`
+    : `${formatNumber(totals.area_m2)} m2`;
+  elements.cutTotals.textContent = `Formatki: ${formatNumber(totals.part_count)} szt. | P?yta: ${boardText} | Okleina: ${formatNumber(totals.edge_mb)} mb | Frez: ${formatNumber(totals.milling_count)} szt. | Otwory: ${formatNumber(totals.drilling_count)} szt. | Lakier: ${formatNumber(totals.lacquer_m2)} m2 | Inne: ${formatNumber(totals.other_count)} szt.`;
 }
 
 function renderOrders() {
@@ -2031,15 +2169,16 @@ function renderDashboard() {
   });
   const unpaidOrders = state.orders.filter((order) => orderHasDebt(order));
   const paidOrders = state.orders.filter((order) => !orderHasDebt(order) && paymentStatusClass(order.payment_status) === "payment-paid");
+  const paymentRows = [...unpaidOrders, ...paidOrders];
   const stockAlerts = getStockAlerts();
   const todayArea = todayJobs.reduce((sum, job) => sum + Number(job.area_m2 || 0), 0);
   const unpaidBalance = unpaidOrders.reduce((sum, order) => sum + Math.max(0, Number(order.balance || 0)), 0);
 
   elements.dashboardCards.innerHTML = [
-    dashboardCard("Dzisiaj", `${todayOrders.length} zam. / ${todayJobs.length} poz.`, `${formatNumber(todayArea)} m2`, todayJobs.length ? "warning" : "success"),
-    dashboardCard("Nieopłacone", `${unpaidOrders.length} zamówień`, `${formatMoney(unpaidBalance)} zł`, unpaidOrders.length ? "danger" : "success"),
-    dashboardCard("Opłacone", `${paidOrders.length} zamówień`, "zamknięte płatności", "success"),
-    dashboardCard("Braki magazynu", `${stockAlerts.length} pozycji`, "materiały potrzebne do aktywnych zamówień", stockAlerts.length ? "danger" : "success")
+    dashboardCard("Dzisiaj", `${todayOrders.length} zam. / ${todayJobs.length} poz.`, `${formatNumber(todayArea)} m2`, todayJobs.length ? "warning" : "success", "today"),
+    dashboardCard("Nieopłacone", `${unpaidOrders.length} zamówień`, `${formatMoney(unpaidBalance)} zł`, unpaidOrders.length ? "danger" : "success", "payments"),
+    dashboardCard("Opłacone", `${paidOrders.length} zamówień`, "zamknięte płatności", "success", "payments"),
+    dashboardCard("Braki magazynu", `${stockAlerts.length} pozycji`, "materiały potrzebne do aktywnych zamówień", stockAlerts.length ? "danger" : "success", "stock")
   ].join("");
 
   elements.dashboardTodayBody.innerHTML = todayJobs.length
@@ -2069,25 +2208,27 @@ function renderDashboard() {
     `).join("")
     : `<tr><td colspan="4">Brak brakujących materiałów dla aktywnych zamówień.</td></tr>`;
 
-  elements.dashboardPaymentsBody.innerHTML = unpaidOrders.length
-    ? unpaidOrders.slice(0, 30).map((order) => `
+  elements.dashboardPaymentsBody.innerHTML = paymentRows.length
+    ? paymentRows.slice(0, 50).map((order) => `
       <tr class="${paymentStatusClass(order.payment_status)}">
         <td>${escapeHtml(order.order_number)}</td>
         <td>${escapeHtml(order.customer_name)}</td>
         <td><span class="payment-badge ${paymentStatusClass(order.payment_status)}">${escapeHtml(order.payment_status)}</span></td>
-        <td class="status-unpaid">${formatMoney(order.balance)}</td>
+        <td class="${orderHasDebt(order) ? "status-unpaid" : "status-paid"}">${formatMoney(order.balance)}</td>
       </tr>
     `).join("")
-    : `<tr><td colspan="4">Brak nieopłaconych zamówień.</td></tr>`;
+    : `<tr><td colspan="4">Brak zamówień z rozliczeniem.</td></tr>`;
+
+  setDashboardPanel(state.activeDashboardPanel);
 }
 
-function dashboardCard(title, value, details, type = "") {
+function dashboardCard(title, value, details, type = "", target = "") {
   return `
-    <div class="dashboard-card ${type}">
+    <button class="dashboard-card ${type}" type="button" data-dashboard-target="${escapeHtml(target)}">
       <div>${escapeHtml(title)}</div>
       <strong>${escapeHtml(value)}</strong>
       <span>${escapeHtml(details)}</span>
-    </div>
+    </button>
   `;
 }
 
@@ -2309,6 +2450,21 @@ function openCutPositionForSelectedOrder() {
   activateTab("cutting");
 }
 
+function openSelectedOrderCutting() {
+  if (!state.selectedOrderId) return showToast("Najpierw kliknij zamówienie");
+  const orderId = Number(state.selectedOrderId);
+  elements.cutJobForm.elements.order_id.value = String(orderId);
+  const jobs = state.cutJobs.filter((job) => Number(job.order_id) === orderId);
+  activateTab("cutting");
+  if (jobs.length) {
+    fillCutJobForm(Number(jobs[0].id));
+    showToast("Otwarto formatki zamówienia");
+  } else {
+    prepareNewCutJob(orderId);
+    showToast("Brak pozycji formatek. Przygotowano nową pozycję.");
+  }
+}
+
 function prepareNewCutJob(orderId) {
   const count = state.cutJobs.filter((job) => Number(job.order_id) === Number(orderId)).length + 1;
   state.selectedCutJobId = null;
@@ -2327,6 +2483,24 @@ function prepareNewCutJob(orderId) {
   renderCutQuoteLines();
 }
 
+async function deleteSelectedCutJob() {
+  if (!state.selectedCutJobId) return showToast("Najpierw kliknij pozycję do usunięcia");
+  const job = state.cutJobs.find((item) => Number(item.id) === Number(state.selectedCutJobId));
+  const label = [job?.order_number, job?.name].filter(Boolean).join(" - ") || `ID ${state.selectedCutJobId}`;
+  if (!confirm(`Usunąć pozycję "${label}" razem z formatkami i wyceną tej pozycji?`)) return;
+  const orderId = Number(elements.cutJobForm.elements.order_id.value || state.selectedOrderId || job?.order_id || 0);
+  await fetchJson(`/api/cut-jobs/${state.selectedCutJobId}`, { method: "DELETE" });
+  resetCutJobForm();
+  if (orderId) {
+    elements.cutJobForm.elements.order_id.value = String(orderId);
+    state.selectedOrderId = orderId;
+  }
+  await refreshCutting();
+  await refreshCrm();
+  await refreshPricing();
+  showToast("Pozycja usunięta");
+}
+
 function prepareNextCutPartRow(selectedMaterialId) {
   const search = elements.cutMaterialSearch.value;
   elements.cutPartForm.reset();
@@ -2336,9 +2510,13 @@ function prepareNextCutPartRow(selectedMaterialId) {
   document.querySelector("#edgeAll").checked = false;
   if (selectedMaterialId) applyCutPartMaterial(selectedMaterialId);
   setTimeout(() => {
-    const field = elements.cutPartForm.elements.length || elements.cutPartForm.elements.material_id;
-    field?.focus();
-    field?.select?.();
+    const field = elements.cutPartForm.elements.length ? elements.cutPartForm.elements.length : elements.cutPartForm.elements.material_id;
+    // Bezpieczny focus:
+    const toFocus = elements.cutPartForm.elements.length && typeof elements.cutPartForm.elements[0].focus === "function"
+      ? elements.cutPartForm.elements[0]
+      : elements.cutPartForm.elements.material_id;
+    toFocus?.focus?.();
+    toFocus?.select?.();
   }, 0);
 }
 
@@ -2408,8 +2586,48 @@ function updateCutTextImportStatus() {
     : "Tekst jest odczytany, ale nie widze prostych formatek D x S";
 }
 
+function parseCutTextRows(text) {
+  // Wymuś nowe linie przed każdym wymiarem, jeśli skaner złączył je w jedną linię
+  const normalizedText = text.replace(/(.)(\b\d+(?:[,.]\d+)?\s*[xX]\s*\d+(?:[,.]\d+)?\b)/g, (match, p1, p2) => {
+    if (p1 === '\n' || p1 === '\r') return match;
+    return `${p1}\n${p2}`;
+  });
+
+  let color = (normalizedText.match(/kolor\s*:\s*([^\n\r]+)/i)?.[1] || "").trim();
+  color = color.replace(/\s*Pr\s*=.*$/i, "").replace(/,.*$/, "").trim(); // Usuń śmieci po kolorze
+  const isLacqueredFront = /fronty\s+lakierowane/i.test(normalizedText);
+  const baseName = [isLacqueredFront ? "Front lakierowany" : "", color].filter(Boolean).join(" ");
+  const defaultMilling = /\bfrez/i.test(normalizedText);
+
+  return normalizedText
+    .split(/\r?\n/)
+    .map((line) => parseCutTextLineSmart(line, baseName, isLacqueredFront, defaultMilling))
+    .filter(Boolean);
+}
+
 async function importCutPartsFromText() {
-  if (!state.selectedCutJobId) return showToast("Najpierw wybierz albo zapisz zlecenie formatek");
+  if (!state.selectedCutJobId) {
+    if (!elements.cutJobForm.elements.order_id.value) {
+      return showToast("Najpierw wybierz z listy zamówienie (lub zapisz pozycję)");
+    }
+    // Automatycznie zapisujemy pozycję!
+    const payload = formPayload(elements.cutJobForm);
+    const partPayload = formPayload(elements.cutPartForm);
+    if (!payload.edge_material_id && partPayload.edge_material_id) {
+      payload.edge_material_id = partPayload.edge_material_id;
+      payload.edge_material_code = partPayload.edge_material_code;
+      payload.edge_material_name = partPayload.edge_material_name;
+    }
+    if (!payload.material_id && partPayload.material_id) {
+      payload.material_id = partPayload.material_id;
+      payload.material_code = partPayload.material_code;
+      payload.material_name = partPayload.material_name;
+    }
+    const saved = await postJson("/api/cut-jobs", payload, "POST");
+    state.selectedCutJobId = saved.id;
+    showToast("Pozycja została automatycznie zapisana.");
+  }
+
   const text = elements.cutTextImport.value || "";
   const rows = parseCutTextRows(text);
   if (!rows.length) {
@@ -2442,23 +2660,15 @@ function buildCutTextBasePayload() {
   return payload;
 }
 
-function parseCutTextRows(text) {
-  const color = (text.match(/kolor\s*:\s*([^\n\r]+)/i)?.[1] || "").trim();
-  const isLacqueredFront = /fronty\s+lakierowane/i.test(text);
-  const baseName = [isLacqueredFront ? "Front lakierowany" : "", color].filter(Boolean).join(" ");
-  const defaultMilling = /\bfrez/i.test(text);
-  return text
-    .split(/\r?\n/)
-    .map((line) => parseCutTextLineSmart(line, baseName, isLacqueredFront, defaultMilling))
-    .filter(Boolean);
-}
+
 
 function parseCutTextLineSmart(line, baseName, isLacqueredFront, defaultMilling = false) {
   const normalizedLine = String(line || "")
     .replace(/[×*]/g, "x")
     .replace(/\b[zż]t\b/gi, "szt")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+    .replace(/^[^\d]+/, "");
   const match = normalizedLine.match(/^\s*(\d+(?:[,.]\d+)?)\s*[xX]\s*(\d+(?:[,.]\d+)?)(?:\s*(?:sztuk|szt\.?|szt|pcs)\s*(\d+(?:[,.]\d+)?))?(.*)$/i);
   if (!match) return null;
   const length = parseImportedNumber(match[1]);
@@ -2570,6 +2780,22 @@ async function showRemainderLogs() {
   elements.remainderLogs.textContent = logs.length
     ? logs.map((log) => `${log.created_at} ${log.event_type} ${log.result_json}\n${log.body}`).join("\n\n")
     : "Brak żądań z GibLab do naszej aplikacji. To znaczy, że GibLab nie wysłał danych na http://localhost:3080/giblab/remainders.";
+}
+
+async function copyRemaindersUrl() {
+  const url = elements.remaindersUrlText?.textContent?.trim() || "http://127.0.0.1:3080/giblab/remainders";
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(url);
+  } else {
+    const input = document.createElement("input");
+    input.value = url;
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand("copy");
+    input.remove();
+  }
+  elements.remainderStatus.textContent = `Skopiowano adres: ${url}`;
+  showToast("Adres dla GibLab skopiowany");
 }
 
 async function prepareNotification(orderId) {

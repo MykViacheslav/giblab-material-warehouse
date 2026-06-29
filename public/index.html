@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="pl">
   <head>
     <meta charset="utf-8">
@@ -7,38 +7,12 @@
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
-    <header class="topbar">
-      <div>
-        <h1>Magazyn materiałów GibLab</h1>
-        <p>Centralny katalog, stany, resztki i eksport do <strong>goods.xls</strong>.</p>
-      </div>
-      <details class="advanced-actions">
-        <summary>Narzędzia GibLab</summary>
-        <div class="actions">
-          <button id="importDefaultBtn">Importuj z C:\GibLabLocal</button>
-          <button id="polishCatalogBtn">Spolszcz nazwy i kody</button>
-          <label class="file-button">
-            Import pliku
-            <input id="goodsFile" type="file" accept=".xls,.xlsx">
-          </label>
-          <button id="exportBtn">Eksport testowy</button>
-          <button id="exportGiblabBtn">Zapisz do GibLab</button>
+    <div class="app-body">
+      <aside class="main-sidebar">
+        <div class="sidebar-brand">
+          <h1>Magazyn GibLab</h1>
         </div>
-      </details>
-    </header>
-
-    <main class="layout">
-      <button id="showTreeBtn" class="show-tree-btn" type="button" title="Pokaż kategorie">Kategorie</button>
-      <aside class="panel tree-panel">
-        <div class="panel-title tree-title">
-          <span>Kategorie</span>
-          <button id="hideTreeBtn" class="small secondary tree-panel-toggle" type="button">Ukryj</button>
-        </div>
-        <div id="tree" class="tree"></div>
-      </aside>
-
-      <section class="panel content-panel">
-        <div class="tabs">
+        <div class="nav-menu">
           <button class="tab" data-tab="dashboard">Dashboard</button>
           <button class="tab" data-tab="customers">Klienci</button>
           <button class="tab" data-tab="orders">Zamówienia</button>
@@ -53,12 +27,38 @@
           <button class="tab" data-tab="backup">Backup</button>
           <button class="tab" data-tab="project">Import .project</button>
         </div>
+      </aside>
 
+      <div class="main-wrapper">
+        <header class="topbar">
+          <div class="topbar-right actions">
+            <button id="importDefaultBtn" class="secondary">Import GibLab</button>
+            <button id="polishCatalogBtn" class="secondary">Spolszcz</button>
+            <label class="file-button secondary">
+              Plik XLS
+              <input id="goodsFile" type="file" accept=".xls,.xlsx">
+            </label>
+            <button id="exportBtn" class="secondary">Test Eksport</button>
+            <button id="exportGiblabBtn" class="secondary">Zapisz do GibLab</button>
+          </div>
+        </header>
+
+        <main class="layout">
+      <button id="showTreeBtn" class="show-tree-btn" type="button" title="Pokaż kategorie">Kategorie</button>
+      <aside class="panel tree-panel">
+        <div class="panel-title tree-title">
+          <span>Kategorie</span>
+          <button id="hideTreeBtn" class="small secondary tree-panel-toggle" type="button">Ukryj</button>
+        </div>
+        <div id="tree" class="tree"></div>
+      </aside>
+
+      <section class="panel content-panel">
         <section id="dashboardTab" class="tab-page">
           <div id="dashboardCards" class="dashboard-grid"></div>
           <div class="dashboard-columns">
-            <div>
-              <h2>Praca na dzisiaj</h2>
+            <div class="dashboard-panel" data-dashboard-panel="today">
+              <button class="dashboard-panel-tab" type="button" data-dashboard-target="today">Praca na dzisiaj</button>
               <div class="table-wrap dashboard-table">
                 <table>
                   <thead>
@@ -75,8 +75,8 @@
                 </table>
               </div>
             </div>
-            <div>
-              <h2>Braki / stan magazynu</h2>
+            <div class="dashboard-panel" data-dashboard-panel="stock">
+              <button class="dashboard-panel-tab" type="button" data-dashboard-target="stock">Braki / stan magazynu</button>
               <div class="table-wrap dashboard-table">
                 <table>
                   <thead>
@@ -91,8 +91,8 @@
                 </table>
               </div>
             </div>
-            <div>
-              <h2>Płatności</h2>
+            <div class="dashboard-panel" data-dashboard-panel="payments">
+              <button class="dashboard-panel-tab" type="button" data-dashboard-target="payments">Płatności</button>
               <div class="table-wrap dashboard-table">
                 <table>
                   <thead>
@@ -204,6 +204,7 @@
             <button id="notifyEmailBtn" type="button">Email</button>
             <button id="newOrderBtn" type="button">Nowe zamówienie</button>
             <button id="addOrderPositionBtn" type="button">Dodaj pozycję</button>
+            <button id="goToOrderCuttingBtn" type="button">Przejdź do zamówienia</button>
             <textarea id="notifyText" readonly placeholder="Kliknij zamówienie, aby przygotować wiadomość do klienta."></textarea>
           </div>
 
@@ -334,12 +335,11 @@
               Import formatek Excel
               <input id="cutExcelFile" type="file" accept=".xls,.xlsx,.csv">
             </label>
-            <button id="exportCutExcelBtn" type="button">Wyślij do GibLab Excel</button>
-            <label class="file-button">
-              Odbierz wynik .project
-              <input id="cutProjectFile" type="file" accept=".project,.xml">
-            </label>
+            <button id="exportCutExcelBtn" type="button">Wyślij do GibLab (.project)</button>
+            <button id="importExportedProjectBtn" type="button">Odbierz wynik .project</button>
+            <input id="cutProjectFile" type="file" accept=".project,.xml" hidden>
             <button id="quoteCutJobBtn" type="button">Wyceń formatki</button>
+            <button id="cutTextImportToggleBtn" type="button">Import tekst / zdjęcie</button>
             <span id="cutStatus" class="hint"></span>
           </div>
 
@@ -347,20 +347,25 @@
             <select name="order_id"></select>
             <input name="name" placeholder="Nazwa pozycji, np. Pozycja 1" required>
             <select name="material_id"></select>
-            <input name="material_name" placeholder="Materiał z Excela / ręcznie">
+            <input name="material_name" placeholder="Płyta z Excela / ręcznie">
+            <select name="edge_material_id"></select>
+            <input name="edge_material_name" placeholder="Okleina z Excela / ręcznie">
             <select name="status">
               <option>Robocze</option>
               <option>Zaimportowane formatki</option>
               <option>Wyeksportowane do GibLab</option>
               <option>Wynik z GibLab zaimportowany</option>
             </select>
-            <input name="notes" placeholder="Uwagi">
-            <button type="submit">Zapisz pozycję</button>
-            <button id="newCutJobBtn" type="button">Nowa pozycja</button>
-            <button id="clearCutJobBtn" type="button">Wyczyść</button>
+            <input name="notes" placeholder="Notatki">
+            <div class="actions">
+              <button type="submit">Zapisz pozycję</button>
+              <button id="newCutJobBtn" type="button">Nowa pozycja</button>
+              <button id="deleteCutJobBtn" class="danger" type="button">Usuń pozycję</button>
+              <button id="clearCutJobBtn" type="button">Wyczyść</button>
+            </div>
           </form>
 
-          <div class="cut-text-import">
+          <div id="cutTextImportPanel" class="cut-text-import">
             <textarea id="cutTextImport" placeholder="240 x 450 sztuk 1 frez&#10;1621 x 746 sztuk 1 frez"></textarea>
             <label class="file-button">
               Import ze zdjęcia
@@ -371,12 +376,18 @@
           </div>
 
           <form id="cutPartForm" class="stock-form cutting-part-form">
-            <input id="cutMaterialSearch" class="cut-material-search" placeholder="Szukaj materiału">
+            <input id="cutMaterialSearch" class="cut-material-search" placeholder="Szukaj płyty">
             <select id="cutProducerFilter" class="cut-filter-select"></select>
             <select id="cutThicknessFilter" class="cut-filter-select"></select>
             <select name="material_id" class="cut-material-select"></select>
-            <input name="material_code" class="cut-code-field" placeholder="Kod" readonly>
-            <input name="material_name" class="cut-material-name" placeholder="Materiał">
+            <input name="material_code" class="cut-code-field" placeholder="Kod płyty" readonly>
+            <input name="material_name" class="cut-material-name" placeholder="Płyta">
+
+            <input id="cutEdgeMaterialSearch" class="cut-material-search" placeholder="Szukaj okleiny">
+            <select name="edge_material_id" class="cut-material-select"></select>
+            <input name="edge_material_code" class="cut-code-field" placeholder="Kod okleiny" readonly>
+            <input name="edge_material_name" class="cut-material-name" placeholder="Okleina">
+
             <input name="thickness" class="cut-short" placeholder="G" readonly>
             <input name="length" class="cut-number" placeholder="Dł." required>
             <input name="width" class="cut-number" placeholder="Szer." required>
@@ -406,7 +417,9 @@
                     <th>Materiał</th>
                     <th>Status</th>
                     <th>Szt.</th>
-                    <th>m2</th>
+                    <th>m2 formatek</th>
+                    <th>GibLab ark./m2</th>
+                    <th>Okleina mb</th>
                   </tr>
                 </thead>
                 <tbody id="cutJobsBody"></tbody>
@@ -472,9 +485,8 @@
                 <tbody id="cutQuoteLinesBody"></tbody>
               </table>
             </div>
-            <p class="hint">
-              Eksport do GibLab nie otwiera projektu automatycznie. Kliknij "Wyślij do GibLab Excel", potem w GibLab wybierz "Import z Excel" i wskaż zaznaczony plik
-              z folderu C:\GibLabLocal\projects\warehouse-formatki. Po rozkroju użyj "Odbierz wynik .project".
+            <p class="hint margin-top">
+              Eksport do GibLab nie otwiera projektu automatycznie. Kliknij "Wyślij do GibLab Excel", potem w GibLab wybierz "Import z Excel" i wskaż zaznaczony plik z folderu C:\GibLabLocal\projects. Po rozkroju użyj "Importuj wynik rozkroju".
             </p>
           </div>
         </section>
@@ -787,9 +799,10 @@
           <div class="toolbar-row">
             <button id="importLatestProjectBtn" type="button">Importuj najnowszy projekt GibLab</button>
             <button id="showRemainderLogsBtn" type="button">Sprawdź połączenie GibLab</button>
+            <button id="copyRemaindersUrlBtn" type="button">Kopiuj adres dla GibLab</button>
             <span id="remainderStatus" class="hint"></span>
           </div>
-          <p class="hint">Adres dla GibLab do resztek: http://127.0.0.1:3080/giblab/remainders. W GibLab ten adres musi być wpisany z http:// na początku.</p>
+          <p class="hint">Adres dla GibLab do resztek: <code id="remaindersUrlText">http://127.0.0.1:3080/giblab/remainders</code>. W GibLab ten adres musi być wpisany z http:// na początku.</p>
           <form id="offcutForm" class="stock-form">
             <input name="id" placeholder="ID resztki">
             <input name="material_id" placeholder="ID materiału">
@@ -854,8 +867,10 @@
           </div>
           <pre id="projectResult"></pre>
         </section>
-      </section>
-    </main>
+        </section>
+      </main>
+      </div>
+    </div>
 
     <div id="toast" class="toast"></div>
     <script src="/app.js" type="module"></script>

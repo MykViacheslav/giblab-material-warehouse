@@ -1,4 +1,4 @@
-import express from "express";
+﻿import express from "express";
 import multer from "multer";
 import { DatabaseSync } from "node:sqlite";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
@@ -238,6 +238,12 @@ db.exec(`
     material_id INTEGER REFERENCES materials(id) ON DELETE SET NULL,
     material_code TEXT DEFAULT '',
     material_name TEXT DEFAULT '',
+    edge_material_id INTEGER REFERENCES materials(id) ON DELETE SET NULL,
+    edge_material_code TEXT DEFAULT '',
+    edge_material_name TEXT DEFAULT '',
+    edge_meters_actual REAL,
+    board_m2_actual REAL,
+    board_sheets_actual REAL,
     status TEXT NOT NULL DEFAULT 'Robocze',
     source_file TEXT DEFAULT '',
     export_path TEXT DEFAULT '',
@@ -286,6 +292,7 @@ ensureColumn("cut_parts", "work_milling", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("cut_parts", "work_drilling", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("cut_parts", "work_lacquer", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("cut_parts", "work_other", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("cut_jobs", "board_m2_actual", "REAL");
 normalizeExistingTextValues();
 seedDefaultPriceItems();
 try {
@@ -1095,9 +1102,9 @@ app.get("/api/cut-jobs", (request, response) => {
 app.post("/api/cut-jobs", (request, response) => {
   const payload = normalizeCutJob(request.body);
   const result = db.prepare(`
-    INSERT INTO cut_jobs (order_id, name, material_id, material_code, material_name, status, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(payload.order_id, payload.name, payload.material_id, payload.material_code, payload.material_name, payload.status, payload.notes);
+    INSERT INTO cut_jobs (order_id, name, material_id, material_code, material_name, edge_material_id, edge_material_code, edge_material_name, status, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(payload.order_id, payload.name, payload.material_id, payload.material_code, payload.material_name, payload.edge_material_id, payload.edge_material_code, payload.edge_material_name, payload.status, payload.notes);
   response.status(201).json(db.prepare("SELECT * FROM cut_jobs WHERE id = ?").get(result.lastInsertRowid));
 });
 
@@ -1106,14 +1113,21 @@ app.put("/api/cut-jobs/:id", (request, response) => {
   const payload = normalizeCutJob(request.body);
   db.prepare(`
     UPDATE cut_jobs
-    SET order_id = ?, name = ?, material_id = ?, material_code = ?, material_name = ?, status = ?, notes = ?
+    SET order_id = ?, name = ?, material_id = ?, material_code = ?, material_name = ?, edge_material_id = ?, edge_material_code = ?, edge_material_name = ?, status = ?, notes = ?
     WHERE id = ?
-  `).run(payload.order_id, payload.name, payload.material_id, payload.material_code, payload.material_name, payload.status, payload.notes, id);
+  `).run(payload.order_id, payload.name, payload.material_id, payload.material_code, payload.material_name, payload.edge_material_id, payload.edge_material_code, payload.edge_material_name, payload.status, payload.notes, id);
   response.json(db.prepare("SELECT * FROM cut_jobs WHERE id = ?").get(id));
 });
 
 app.delete("/api/cut-jobs/:id", (request, response) => {
-  db.prepare("DELETE FROM cut_jobs WHERE id = ?").run(Number(request.params.id));
+  const id = Number(request.params.id);
+  const job = db.prepare("SELECT * FROM cut_jobs WHERE id = ?").get(id);
+  if (!job) return response.status(404).json({ error: "Cut job not found" });
+  runInTransaction(() => {
+    db.prepare("DELETE FROM quote_lines WHERE cut_job_id = ?").run(id);
+    db.prepare("DELETE FROM cut_jobs WHERE id = ?").run(id);
+    if (job.order_id) updateOrderTotalFromQuote(job.order_id);
+  });
   response.status(204).end();
 });
 
@@ -1196,10 +1210,22 @@ app.post("/api/cut-jobs/:id/import-excel", upload.single("formatki"), (request, 
 app.post("/api/ocr/cut-text", upload.single("photo"), async (request, response) => {
   try {
     if (!request.file?.buffer) return response.status(400).json({ error: "Missing photo" });
-    const worker = await createWorker("pol+eng");
-    const result = await worker.recognize(request.file.buffer);
-    await worker.terminate();
-    response.json({ text: normalizeOcrText(result.data.text || "") });
+    const fsPromises = await import("node:fs/promises");
+    const os = await import("node:os");
+    const tempFilePath = path.join(os.tmpdir(), `ocr_${Date.now()}_${Math.floor(Math.random() * 10000)}.jpg`);
+    await fsPromises.writeFile(tempFilePath, request.file.buffer);
+
+    let resultText = "";
+    try {
+      const worker = await createWorker("pol+eng");
+      const result = await worker.recognize(tempFilePath);
+      await worker.terminate();
+      resultText = result.data.text || "";
+    } finally {
+      await fsPromises.unlink(tempFilePath).catch(() => {});
+    }
+
+    response.json({ text: normalizeOcrText(resultText) });
   } catch (error) {
     console.error(error);
     response.status(500).json({ error: "Nie udało się odczytać tekstu ze zdjęcia" });
@@ -1217,15 +1243,82 @@ app.post("/api/cut-jobs/:id/export-excel", (request, response) => {
   `).get(jobId);
   if (!job) return response.status(404).json({ error: "Cut job not found" });
   const parts = db.prepare("SELECT * FROM cut_parts WHERE cut_job_id = ? ORDER BY sort_order, id").all(jobId);
-  const target = exportCutJobExcel(job, parts, request.body?.target);
+  const target = exportCutJobProject(job, parts, request.body?.target);
   db.prepare("UPDATE cut_jobs SET export_path = ?, status = ? WHERE id = ?").run(target, "Wyeksportowane do GibLab", jobId);
   response.json({ exported: parts.length, target });
+});
+
+app.post("/api/orders/:id/export-project", (request, response) => {
+  const orderId = Number(request.params.id);
+  const order = db.prepare(`
+    SELECT o.*, c.name AS customer_name, c.phone AS customer_phone
+    FROM orders o
+    LEFT JOIN customers c ON c.id = o.customer_id
+    WHERE o.id = ?
+  `).get(orderId);
+  if (!order) return response.status(404).json({ error: "Order not found" });
+  const jobs = db.prepare("SELECT * FROM cut_jobs WHERE order_id = ? ORDER BY id").all(orderId);
+  if (!jobs.length) return response.status(400).json({ error: "Order has no cut jobs" });
+  const parts = db.prepare(`
+    SELECT p.*,
+      j.name AS cut_job_name,
+      j.material_id AS job_material_id,
+      j.material_code AS job_material_code,
+      j.material_name AS job_material_name,
+      j.edge_material_id AS job_edge_material_id,
+      j.edge_material_code AS job_edge_material_code,
+      j.edge_material_name AS job_edge_material_name
+    FROM cut_parts p
+    JOIN cut_jobs j ON j.id = p.cut_job_id
+    WHERE j.order_id = ?
+    ORDER BY j.id, p.sort_order, p.id
+  `).all(orderId).map((part) => ({
+    ...part,
+    material_id: part.job_material_id || part.material_id || null,
+    material_code: part.job_material_code || part.material_code || "",
+    material_name: part.job_material_name || part.material_name || "",
+    edge_material_id: part.job_edge_material_id || part.edge_material_id || null,
+    edge_material_code: part.job_edge_material_code || part.edge_material_code || "",
+    edge_material_name: part.job_edge_material_name || part.edge_material_name || "",
+    name: part.name || part.cut_job_name || "Formatka"
+  }));
+  if (!parts.length) return response.status(400).json({ error: "Order has no cut parts" });
+  const target = exportCutJobProject({
+    id: order.id,
+    order_id: order.id,
+    order_number: order.order_number,
+    name: order.title || "Zamowienie",
+    material_code: "",
+    material_name: "",
+    edge_material_code: "",
+    edge_material_name: "",
+    customer_name: order.customer_name,
+    customer_phone: order.customer_phone
+  }, parts, request.body?.target);
+  db.prepare("UPDATE cut_jobs SET export_path = ?, status = ? WHERE order_id = ?").run(target, "Wyeksportowane do GibLab", orderId);
+  db.prepare("UPDATE orders SET project_path = ? WHERE id = ?").run(path.basename(target), orderId);
+  response.json({ exported: parts.length, jobs: jobs.length, target });
 });
 
 app.post("/api/cut-jobs/:id/open-export-folder", (request, response) => {
   const jobId = Number(request.params.id);
   const job = db.prepare("SELECT export_path FROM cut_jobs WHERE id = ?").get(jobId);
   const target = job?.export_path || path.join("C:\\GibLabLocal\\projects\\warehouse-formatki", "formatki.xls");
+  const folder = path.dirname(target);
+  if (!existsSync(folder)) mkdirSync(folder, { recursive: true });
+  if (process.platform === "win32") {
+    const args = existsSync(target) ? [`/select,${target}`] : [folder];
+    spawn("explorer.exe", args, { detached: true, stdio: "ignore" }).unref();
+  }
+  response.json({ folder, target: existsSync(target) ? target : "" });
+});
+
+app.post("/api/orders/:id/open-export-folder", (request, response) => {
+  const orderId = Number(request.params.id);
+  const row = db.prepare("SELECT export_path FROM cut_jobs WHERE order_id = ? AND export_path <> '' ORDER BY id LIMIT 1").get(orderId);
+  const order = db.prepare("SELECT order_number, title FROM orders WHERE id = ?").get(orderId);
+  const safeName = safeFileName(`${order?.order_number || "bez-zamowienia"}-${order?.title || "formatki"}`);
+  const target = row?.export_path || path.join("C:\\GibLabLocal\\projects", `${safeName}.project`);
   const folder = path.dirname(target);
   if (!existsSync(folder)) mkdirSync(folder, { recursive: true });
   if (process.platform === "win32") {
@@ -1279,6 +1372,50 @@ app.post("/api/cut-jobs/:id/import-project", upload.single("project"), (request,
   }
 });
 
+app.post("/api/cut-jobs/:id/import-exported-project", (request, response) => {
+  const jobId = Number(request.params.id);
+  const job = db.prepare("SELECT * FROM cut_jobs WHERE id = ?").get(jobId);
+  if (!job) return response.status(404).json({ error: "Cut job not found" });
+  const target = String(request.body?.path || job.export_path || "");
+  if (!target || !existsSync(target)) return response.status(404).json({ error: "Exported .project file not found" });
+  const xml = readFileSync(target, "utf8");
+  const actuals = parseProjectActuals(xml);
+  db.prepare(`
+    UPDATE cut_jobs
+    SET board_sheets_actual = ?, board_m2_actual = ?, edge_meters_actual = ?, project_path = ?, status = 'Wynik z GibLab zaimportowany'
+    WHERE id = ?
+  `).run(actuals.totalBoardSheets, actuals.totalBoardM2, actuals.totalEdgeMeters, path.basename(target), jobId);
+  if (job.order_id) db.prepare("UPDATE orders SET project_path = ?, production_status = ? WHERE id = ?").run(path.basename(target), "Po rozkroju", job.order_id);
+  response.json({ ...actuals, projectName: path.basename(target), path: target, jobs: [{ id: jobId, board_sheets_actual: actuals.totalBoardSheets, board_m2_actual: actuals.totalBoardM2, edge_meters_actual: actuals.totalEdgeMeters }] });
+});
+
+app.post("/api/orders/:id/import-exported-project", (request, response) => {
+  const orderId = Number(request.params.id);
+  const order = db.prepare("SELECT * FROM orders WHERE id = ?").get(orderId);
+  if (!order) return response.status(404).json({ error: "Order not found" });
+  const exported = db.prepare("SELECT export_path FROM cut_jobs WHERE order_id = ? AND export_path <> '' ORDER BY id DESC LIMIT 1").get(orderId);
+  const fallbackPath = order.project_path ? path.join("C:\\GibLabLocal\\projects", order.project_path) : "";
+  const target = String(request.body?.path || exported?.export_path || fallbackPath || "");
+  if (!target || !existsSync(target)) return response.status(404).json({ error: "Exported .project file not found" });
+  const xml = readFileSync(target, "utf8");
+  const actuals = parseProjectActuals(xml);
+  const jobs = db.prepare("SELECT * FROM cut_jobs WHERE order_id = ? ORDER BY id").all(orderId);
+  const parts = db.prepare("SELECT * FROM cut_parts WHERE cut_job_id IN (SELECT id FROM cut_jobs WHERE order_id = ?)").all(orderId);
+  const allocations = allocateProjectActualsToJobs(actuals, jobs, parts);
+  const updateJob = db.prepare(`
+    UPDATE cut_jobs
+    SET board_sheets_actual = ?, board_m2_actual = ?, edge_meters_actual = ?, project_path = ?, status = 'Wynik z GibLab zaimportowany'
+    WHERE id = ?
+  `);
+  runInTransaction(() => {
+    for (const row of allocations) {
+      updateJob.run(row.board_sheets_actual, row.board_m2_actual, row.edge_meters_actual, path.basename(target), row.id);
+    }
+    db.prepare("UPDATE orders SET project_path = ?, production_status = ? WHERE id = ?").run(path.basename(target), "Po rozkroju", orderId);
+  });
+  response.json({ ...actuals, projectName: path.basename(target), path: target, jobs: allocations });
+});
+
 app.post("/api/project/import", upload.single("project"), (request, response) => {
   const xml = request.file?.buffer.toString("utf8") || String(request.body.xml || "");
   if (!xml.trim()) return response.status(400).json({ error: "Missing project XML" });
@@ -1317,12 +1454,22 @@ app.get("/api/integration/remainder-logs", (request, response) => {
 });
 
 app.get("/giblab/remainders", (request, response) => {
-  handleGibLabRemainders(request, response, String(request.query.type || request.header("type") || "load").toLowerCase(), "");
+  handleGibLabRemainders(request, response, normalizeRemainderRequestType(request, ""), "");
 });
 
 app.post("/giblab/remainders", (request, response) => {
-  handleGibLabRemainders(request, response, String(request.header("type") || request.query.type || "").toLowerCase(), String(request.body || ""));
+  const body = String(request.body || "");
+  handleGibLabRemainders(request, response, normalizeRemainderRequestType(request, body), body);
 });
+
+function normalizeRemainderRequestType(request, body) {
+  const explicitType = String(request.header("type") || request.query.type || "").trim().toLowerCase();
+  if (explicitType === "load" || explicitType === "save" || explicitType === "report") return explicitType;
+  const text = String(body || "").trim().toLowerCase();
+  if (!text) return "load";
+  if (text === "load" || text === "save" || text === "report") return text;
+  return "save";
+}
 
 function handleGibLabRemainders(request, response, type, body) {
   if (type === "load") {
@@ -1341,7 +1488,9 @@ function handleGibLabRemainders(request, response, type, body) {
     logIntegration("giblab", type, request.headers, body, result);
     return response.type("text/plain; charset=utf-8").send(`OK ${result.saved}`);
   }
-  response.status(400).type("text/plain; charset=utf-8").send("Unknown type header");
+  const fallbackType = String(body || "").trim() ? "save" : "load";
+  logIntegration("giblab", "unknown", request.headers, body, { type, fallbackType });
+  return handleGibLabRemainders(request, response, fallbackType, body);
 }
 
 app.listen(port, host, () => {
@@ -1465,12 +1614,17 @@ function normalizeQuoteLine(input) {
 function normalizeCutJob(input) {
   const materialId = toNullableNumber(input.material_id);
   const material = materialId ? selectMaterial.get(materialId) : null;
+  const edgeMaterialId = toNullableNumber(input.edge_material_id);
+  const edgeMaterial = edgeMaterialId ? selectMaterial.get(edgeMaterialId) : null;
   return {
     order_id: toNullableNumber(input.order_id),
     name: String(input.name || input.title || "").trim() || "Formatki",
     material_id: materialId,
     material_code: String(input.material_code || material?.code || ""),
     material_name: String(input.material_name || material?.name || ""),
+    edge_material_id: edgeMaterialId,
+    edge_material_code: String(input.edge_material_code || edgeMaterial?.code || ""),
+    edge_material_name: String(input.edge_material_name || edgeMaterial?.name || ""),
     status: String(input.status || "Robocze"),
     notes: String(input.notes || "")
   };
@@ -1553,8 +1707,9 @@ function findExcelSheetName(workbook, names) {
 }
 
 function getCutJobTotals(jobId) {
+  const job = db.prepare("SELECT edge_meters_actual, board_sheets_actual, board_m2_actual FROM cut_jobs WHERE id = ?").get(jobId);
   const rows = db.prepare("SELECT * FROM cut_parts WHERE cut_job_id = ?").all(jobId);
-  return rows.reduce((totals, part) => {
+  const calculated = rows.reduce((totals, part) => {
     const quantity = Number(part.quantity || 0);
     const length = Number(part.length || 0);
     const width = Number(part.width || 0);
@@ -1570,82 +1725,160 @@ function getCutJobTotals(jobId) {
     if (part.work_other) totals.other_count += quantity;
     return totals;
   }, { part_count: 0, area_m2: 0, edge_mb: 0, milling_count: 0, drilling_count: 0, lacquer_m2: 0, other_count: 0 });
+
+  if (job && job.edge_meters_actual !== null && job.edge_meters_actual > 0) {
+    calculated.edge_mb = job.edge_meters_actual;
+  }
+  if (job && job.board_sheets_actual !== null && job.board_sheets_actual > 0) {
+    calculated.board_sheets = job.board_sheets_actual;
+  }
+  if (job && job.board_m2_actual !== null && job.board_m2_actual > 0) {
+    calculated.board_m2_actual = job.board_m2_actual;
+  }
+
+  return calculated;
 }
 
-function exportCutJobExcel(job, parts, target) {
-  const dir = path.dirname(target || path.join("C:\\GibLabLocal\\projects\\warehouse-formatki", "placeholder.xls"));
+function exportCutJobProject(job, parts, target) {
+  const dir = path.dirname(target || path.join("C:\\GibLabLocal\\projects", "placeholder.project"));
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   const safeName = safeFileName(`${job.order_number || "bez-zamowienia"}-${job.name || "formatki"}`);
-  const targetPath = target || path.join(dir, `${safeName}.xls`);
-  const detailsRows = [
-    ["Материал", "Длина", "Ширина", "Количество", "Текстура", "Наименование", "OB", "OH", "OL", "OP", "Описание"],
-    ...parts.map((part) => [
-      part.material_name || job.material_name || "",
-      part.length,
-      part.width,
-      part.quantity,
-      part.texture ? 1 : 0,
-      part.name || "",
-      part.edge_top || "",
-      part.edge_bottom || "",
-      part.edge_left || "",
-      part.edge_right || "",
-      part.description || ""
-    ])
-  ];
-  const materials = new Map();
-  parts.forEach((part, index) => {
-    const name = part.material_name || job.material_name || "";
-    if (!name || materials.has(name)) return;
-    const materialRow = part.material_id ? db.prepare("SELECT length, width, thickness FROM materials WHERE id = ?").get(part.material_id) : null;
-    materials.set(name, {
-      code: part.material_code || job.material_code || `MAT-${index + 1}`,
-      name,
-      length: materialRow?.length || "",
-      width: materialRow?.width || "",
-      thickness: part.thickness || materialRow?.thickness || "",
-      price: ""
-    });
+  const targetPath = target || path.join(dir, `${safeName}.project`);
+
+  const sheetsMap = new Map();
+  parts.forEach((p) => {
+    const material = resolveExportMaterial(job, p);
+    const code = material.code;
+    if (!sheetsMap.has(code)) {
+      sheetsMap.set(code, {
+        id: 10 + sheetsMap.size,
+        code,
+        name: material.name,
+        length: material.length,
+        width: material.width,
+        thickness: material.thickness,
+        parts: []
+      });
+    }
+    sheetsMap.get(code).parts.push(p);
   });
-  const materialsRows = [
-    ["", "Код", "Наименование", "Длина", "Ширина", "Толщина", "Цена"],
-    ...[...materials.values()].map((material) => [
-      "",
-      material.code,
-      material.name,
-      material.length,
-      material.width,
-      material.thickness,
-      material.price
-    ])
-  ];
-  const simpleOperationsRows = [
-    ["", "Изделие", "Код", "Наименование", "Описание", "Стоимость операции", "Код компонента", "Наименование компонента", "Единица измерения", "Цена", "Количество"]
-  ];
-  const productRows = [
-    ["", "Код", "Наименование", "Количество", "Описание", "Телефон 1", "Телефон 2", "Дата"],
-    [
-      "",
-      job.order_number || `JOB-${job.id}`,
-      job.order_title || job.name,
-      1,
-      [job.customer_name, job.customer_phone].filter(Boolean).join(" / "),
-      job.customer_phone || "",
-      "",
-      ""
-    ]
-  ];
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(detailsRows), "детали");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(materialsRows), "материалы");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(simpleOperationsRows), "простые операции");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(productRows), "изделия");
-  writeFileSync(targetPath, XLSX.write(workbook, { type: "buffer", bookType: "biff8" }));
+
+  const bandsMap = new Map();
+  parts.forEach((p) => {
+    if (p.edge_top || p.edge_bottom || p.edge_left || p.edge_right) {
+      const edgeMaterial = resolveExportEdgeMaterial(job, p);
+      const code = edgeMaterial.code;
+      if (!bandsMap.has(code)) {
+        bandsMap.set(code, { id: 20 + bandsMap.size, opId: 200 + bandsMap.size, code, name: edgeMaterial.name, parts: new Set() });
+      }
+      bandsMap.get(code).parts.add(p);
+    }
+  });
+
+  let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+  xml += `<project currency="PLN" version="1" name="${safeName}" jobId="${job.id}">\n`;
+
+  xml += `  <good id="1" typeId="product" count="1" name="${escapeXml(job.order_number ? job.order_number + ' ' + job.name : job.name)}">\n`;
+  parts.forEach((p) => {
+    const partId = p.id + 1000;
+    const txt = p.texture ? "true" : "false";
+    const length = cleanProjectNumber(p.length || 0);
+    const width = cleanProjectNumber(p.width || 0);
+    const quantity = cleanProjectNumber(p.quantity || 1);
+    const edges = [];
+    if (p.edge_top || p.edge_bottom || p.edge_left || p.edge_right) {
+      const bandCode = resolveExportEdgeMaterial(job, p).code;
+      const opId = bandsMap.get(bandCode)?.opId || 200;
+      if (p.edge_top) edges.push(`elt="@operation#${opId}"`);
+      if (p.edge_bottom) edges.push(`elb="@operation#${opId}"`);
+      if (p.edge_left) edges.push(`ell="@operation#${opId}"`);
+      if (p.edge_right) edges.push(`elr="@operation#${opId}"`);
+    }
+    const edgeStr = edges.length ? " " + edges.join(" ") : "";
+    xml += `    <part id="${partId}" l="${length}" w="${width}" dl="${length}" dw="${width}" jl="${length}" jw="${width}" cl="${length}" cw="${width}" count="${quantity}" usedCount="0" minusCount="0" txt="${txt}" name="${escapeXml(p.name || "Formatka")}"${edgeStr} />\n`;
+  });
+  xml += `  </good>\n`;
+
+  if (parts.length > 0) {
+    xml += `  <good typeId="tool.cutting" id="2" swSawthick="4.4" swSawthickDiv="-1" swPackageHeight="40" swMaxturns="6" swComplexBand="true" swTrimIncludeSaw="false" swSort="0" swSortInBand="3" swMinSizeBand="0" swMaxSizeBand="0" swMinPruning="0" swMaxLengthBand="0"/>\n`;
+    let csOpId = 100;
+    for (const sheet of sheetsMap.values()) {
+      const sheetLength = cleanProjectNumber(sheet.length || 2800);
+      const sheetWidth = cleanProjectNumber(sheet.width || 2070);
+      const sheetThickness = cleanProjectNumber(sheet.thickness || 18);
+      const sheetPartId = cleanProjectNumber(9000 + Number(sheet.id || 0));
+      xml += `  <good id="${sheet.id}" typeId="sheet" name="${escapeXml(sheet.name)}" code="${escapeXml(sheet.code)}" unit="m2" l="${sheetLength}" w="${sheetWidth}" t="${sheetThickness}" thick="${sheetThickness}" count="100" cost="0">\n`;
+      xml += `    <part id="${sheetPartId}" l="${sheetLength}" w="${sheetWidth}" count="100" usedCount="0" />\n`;
+      xml += `  </good>\n`;
+
+      xml += `  <operation id="${csOpId}" typeId="CN" tool1="2" cSizeMode="1" l="${sheetLength}" w="${sheetWidth}" t="${sheetThickness}" cTrimL="10" cTrimW="10" cMinDimDetail="0" cMaxPartsOnPattern="0" cPrefLargePacket="false" cCombiningParts="false" cGroupParts="0" cAllowanceWorkpiece="0" cSortPatterns="0" cCostByItem="0" cCostByItemRound="false" printable="true" startNewPage="true" cnMBCut.diameter="6" cnMPCut.diameter="8" cnMPCut.use="0" cnMPCut.useMinArea="0.25" cnMPCut.useMinSize="100" cnMBCut.name="MillBaseCut6" cnMPCut.name="MillPreCut" cnMBCut.protrusion="0.3" cnMBCut.allowance="0" cnMBCut.movement="1" cnMPCut.protrusion="-2" cnXNCBack="0" cnRotatingParts="0" cnDirWaste="0" cnSortPartsOnSheet="0" cnLabelW="100" cnLabelH="60" cnModeWaste="2" cTrimWaste="false" cnMBCut.plungeAngle="45" cnMPCut.plungeAngle="90" cnMBCut.plungeIndent="3" cnMPCut.plungeIndent="5" nstPreferenceCutOut="0" cCostType="0" cCostCut="0" cMinDimRegWaste1="400" cMinDimRegWaste2="400" cBusinessWaste="10">\n`;
+      sheet.parts.forEach(p => xml += `    <part id="${p.id + 1000}" />\n`);
+      xml += `    <part id="${sheetPartId}" />\n`;
+      xml += `    <material id="${sheet.id}" />\n`;
+      xml += `  </operation>\n`;
+      csOpId++;
+    }
+  }
+
+  if (bandsMap.size > 0) {
+    xml += `  <good id="3" typeId="tool.edgeline" />\n`;
+    for (const band of bandsMap.values()) {
+      xml += `  <good id="${band.id}" typeId="band" name="${escapeXml(band.name)}" code="${escapeXml(band.code)}" unit="m" t="1" w="22" />\n`;
+
+      xml += `  <operation id="${band.opId}" typeId="EL" tool1="3">\n`;
+      xml += `    <material id="${band.id}" />\n`;
+      xml += `  </operation>\n`;
+    }
+  }
+
+  xml += `</project>`;
+  writeFileSync(targetPath, xml, "utf-8");
   return targetPath;
+}
+
+function resolveExportMaterial(job, part) {
+  const materialId = toNullableNumber(job.material_id) || toNullableNumber(part.material_id);
+  const material = materialId ? selectMaterial.get(materialId) : null;
+  return {
+    code: material?.code || job.material_code || part.material_code || "Plyta_Domyslna",
+    name: material?.name || job.material_name || part.material_name || "Płyta",
+    length: material?.length || 2800,
+    width: material?.width || 2070,
+    thickness: material?.thickness || job.material_thickness || part.thickness || 18
+  };
+}
+
+function resolveExportEdgeMaterial(job, part) {
+  const materialId = toNullableNumber(job.edge_material_id) || toNullableNumber(part.edge_material_id);
+  const material = materialId ? selectMaterial.get(materialId) : null;
+  return {
+    code: material?.code || job.edge_material_code || part.edge_material_code || "Okleina_Domyslna",
+    name: material?.name || job.edge_material_name || part.edge_material_name || "Okleina"
+  };
+}
+
+function escapeXml(unsafe) {
+  return String(unsafe || "")
+    .replace(/[<>&'"]/g, (c) => {
+      switch (c) {
+        case '<': return '&lt;';
+        case '>': return '&gt;';
+        case '&': return '&amp;';
+        case '\'': return '&apos;';
+        case '"': return '&quot;';
+      }
+    });
 }
 
 function safeFileName(value) {
   return String(value || "plik").replace(/[<>:"/\\|?*]+/g, "-").replace(/\s+/g, " ").trim().slice(0, 120);
+}
+
+function cleanProjectNumber(value) {
+  const number = Number(String(value ?? 0).replace(/\s/g, "").replace(",", "."));
+  if (!Number.isFinite(number)) return "0";
+  if (Number.isInteger(number)) return String(number);
+  return String(Number(number.toFixed(3)));
 }
 
 function normalizeOffcut(input) {
@@ -1853,14 +2086,131 @@ function buildTree(rows) {
   return roots;
 }
 
+function parseProjectActuals(xml) {
+  const projectMatch = xml.match(/<project\b([^>]*)\/?>/i);
+  const projectAttrs = projectMatch ? parseAttributes(projectMatch[1]) : {};
+  const sheetUsageByCode = {};
+  const sheetM2ByCode = {};
+  const bandUsageByCode = {};
+  let totalBoardSheets = 0;
+  let totalBoardM2 = 0;
+  let totalEdgeMeters = 0;
+
+  for (const match of xml.matchAll(/<good\b([^>]*?)(?:\/>|>([\s\S]*?)<\/good>)/gi)) {
+    const attrs = parseAttributes(match[1]);
+    const typeId = attrValue(attrs, "typeId").toLowerCase();
+    if (typeId !== "sheet" && typeId !== "band") continue;
+    const code = attrValue(attrs, "code") || attrValue(attrs, "name") || typeId;
+    const body = match[2] || "";
+    let used = readProjectNumber(attrValue(attrs, "usedCount"));
+    for (const partMatch of body.matchAll(/<part\b([^>]*)\/?>/gi)) {
+      const partAttrs = parseAttributes(partMatch[1]);
+      used += readProjectNumber(attrValue(partAttrs, "usedCount"));
+    }
+    if (used <= 0) continue;
+    if (typeId === "sheet") {
+      const sheetM2 = readProjectNumber(attrValue(attrs, "count"))
+        || (readProjectNumber(attrValue(attrs, "l")) * readProjectNumber(attrValue(attrs, "w")) * used / 1000000);
+      totalBoardSheets += used;
+      totalBoardM2 += sheetM2;
+      sheetUsageByCode[code] = (sheetUsageByCode[code] || 0) + used;
+      sheetM2ByCode[code] = (sheetM2ByCode[code] || 0) + sheetM2;
+    } else {
+      totalEdgeMeters += used;
+      bandUsageByCode[code] = (bandUsageByCode[code] || 0) + used;
+    }
+  }
+
+  return { projectAttrs, totalBoardSheets, totalBoardM2, totalEdgeMeters, sheetUsageByCode, sheetM2ByCode, bandUsageByCode };
+}
+
+function allocateProjectActualsToJobs(actuals, jobs, parts) {
+  const metrics = new Map(jobs.map((job) => [Number(job.id), { area: 0, edge: 0 }]));
+  for (const part of parts) {
+    const jobId = Number(part.cut_job_id);
+    const metric = metrics.get(jobId);
+    if (!metric) continue;
+    const quantity = Number(part.quantity || 0);
+    const length = Number(part.length || 0);
+    const width = Number(part.width || 0);
+    metric.area += length * width * quantity / 1000000;
+    if (part.edge_top) metric.edge += length * quantity / 1000;
+    if (part.edge_bottom) metric.edge += length * quantity / 1000;
+    if (part.edge_left) metric.edge += width * quantity / 1000;
+    if (part.edge_right) metric.edge += width * quantity / 1000;
+  }
+
+  const rows = jobs.map((job) => ({ id: Number(job.id), board_sheets_actual: 0, board_m2_actual: 0, edge_meters_actual: 0 }));
+  distributeUsage(rows, jobs, metrics, actuals.sheetUsageByCode, "material_code", "area", "board_sheets_actual");
+  distributeUsage(rows, jobs, metrics, actuals.sheetM2ByCode, "material_code", "area", "board_m2_actual");
+  distributeUsage(rows, jobs, metrics, actuals.bandUsageByCode, "edge_material_code", "edge", "edge_meters_actual");
+
+  if (actuals.totalBoardSheets > 0 && rows.every((row) => row.board_sheets_actual <= 0)) {
+    distributeTotal(rows, jobs, metrics, actuals.totalBoardSheets, "area", "board_sheets_actual");
+  }
+  if (actuals.totalBoardM2 > 0 && rows.every((row) => row.board_m2_actual <= 0)) {
+    distributeTotal(rows, jobs, metrics, actuals.totalBoardM2, "area", "board_m2_actual");
+  }
+  if (actuals.totalEdgeMeters > 0 && rows.every((row) => row.edge_meters_actual <= 0)) {
+    distributeTotal(rows, jobs, metrics, actuals.totalEdgeMeters, "edge", "edge_meters_actual");
+  }
+
+  return rows;
+}
+
+function distributeUsage(rows, jobs, metrics, usageByCode, jobCodeField, weightField, targetField) {
+  for (const [code, amount] of Object.entries(usageByCode || {})) {
+    const matchingJobs = jobs.filter((job) => {
+      const jobCode = String(job[jobCodeField] || "").trim();
+      return jobCode ? jobCode === code : code === "Plyta_Domyslna" || code === "Okleina_Domyslna";
+    });
+    distributeAmount(rows, matchingJobs, metrics, amount, weightField, targetField);
+  }
+}
+
+function distributeTotal(rows, jobs, metrics, amount, weightField, targetField) {
+  distributeAmount(rows, jobs, metrics, amount, weightField, targetField);
+}
+
+function distributeAmount(rows, jobs, metrics, amount, weightField, targetField) {
+  if (!jobs.length || amount <= 0) return;
+  const totalWeight = jobs.reduce((sum, job) => sum + Math.max(0, metrics.get(Number(job.id))?.[weightField] || 0), 0);
+  for (const job of jobs) {
+    const row = rows.find((item) => item.id === Number(job.id));
+    if (!row) continue;
+    const weight = totalWeight > 0 ? Math.max(0, metrics.get(Number(job.id))?.[weightField] || 0) : 1;
+    const share = jobs.length === 1 ? amount : amount * weight / (totalWeight || jobs.length);
+    row[targetField] += share;
+  }
+}
+
+function attrValue(attrs, name) {
+  const wanted = name.toLowerCase();
+  const entry = Object.entries(attrs || {}).find(([key]) => key.toLowerCase() === wanted);
+  return entry ? String(entry[1] || "") : "";
+}
+
+function readProjectNumber(value) {
+  const number = Number(String(value || 0).replace(/\s/g, "").replace(",", "."));
+  return Number.isFinite(number) ? number : 0;
+}
+
 function importProject(xml, projectName, projectPath = projectName) {
   return runInTransaction(() => {
+    const actuals = parseProjectActuals(xml);
+    const projectAttrs = actuals.projectAttrs;
+    const jobId = attrValue(projectAttrs, "jobId") ? Number(attrValue(projectAttrs, "jobId")) : null;
+
     const materials = [...xml.matchAll(/<material\b([^>]*)\/?>/g)].map((match) => parseAttributes(match[1]));
     const parts = [...xml.matchAll(/<part\b([^>]*)\/?>/g)].map((match) => parseAttributes(match[1]));
-    const goods = [...xml.matchAll(/<good\b([^>]*)\/?>/g)].map((match) => parseAttributes(match[1]));
-    const sheetGood = goods.find((good) => good.typeId === "sheet" && good.code);
+
+    if (jobId) {
+      db.prepare("UPDATE cut_jobs SET board_sheets_actual = ?, board_m2_actual = ?, edge_meters_actual = ?, status = 'Wynik z GibLab zaimportowany' WHERE id = ?").run(actuals.totalBoardSheets, actuals.totalBoardM2, actuals.totalEdgeMeters, jobId);
+    }
+
     let usedCount = 0;
     let offcutCount = 0;
+    const sheetGood = { code: "" };
 
     for (const material of materials) {
       const code = material.code || "";
