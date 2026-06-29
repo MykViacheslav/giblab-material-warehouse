@@ -22,14 +22,17 @@ if (-not (Test-WarehouseServer)) {
   }
 }
 
-$EdgePaths = @(
-  "$env:ProgramFiles(x86)\Microsoft\Edge\Application\msedge.exe",
-  "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
+$BrowserPaths = @(
+  "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
+  "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
+  "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+  "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+  "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
 )
-$Edge = $EdgePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+$Browser = $BrowserPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
 
-if ($Edge) {
-  Start-Process -FilePath $Edge -ArgumentList "--app=$Url"
+if ($Browser) {
+  Start-Process -FilePath $Browser -ArgumentList "--app=$Url"
 } else {
-  Start-Process $Url
+  Start-Process -FilePath "explorer.exe" -ArgumentList $Url
 }
