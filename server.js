@@ -12,6 +12,7 @@ import { MATERIAL_CATALOG_COLUMNS, MATERIAL_CATALOG_FIELD_NAMES, normalizeMateri
 import { commitMaterialImport, previewMaterialImport } from "./src/materialImport.js";
 import { buildCutQuoteLines, normalizeCutQuotePrices } from "./src/cutQuote.js";
 import { getCustomerDeleteBlockers, getMaterialDeleteBlockers, getOrderDeleteBlockers } from "./src/deleteSafety.js";
+import { DEFAULT_OFFCUT_STORAGE_LOCATIONS, chooseOffcutStorageLocation } from "./src/offcutStorage.js";
 import {
   createBackup,
   createDailyAutoBackup,
@@ -85,8 +86,28 @@ db.exec(`
     is_business INTEGER NOT NULL DEFAULT 0,
     project_name TEXT DEFAULT '',
     project_path TEXT DEFAULT '',
+    storage_location TEXT DEFAULT '',
+    storage_note TEXT DEFAULT '',
+    reserved_by TEXT DEFAULT '',
+    reserved_at TEXT DEFAULT '',
+    reserved_project TEXT DEFAULT '',
+    source_station TEXT DEFAULT '',
+    used_by TEXT DEFAULT '',
+    used_at TEXT DEFAULT '',
     status TEXT NOT NULL DEFAULT 'available',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS offcut_storage_locations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL DEFAULT '',
+    min_long_side REAL NOT NULL DEFAULT 0,
+    max_long_side REAL NOT NULL DEFAULT 10000,
+    min_short_side REAL NOT NULL DEFAULT 0,
+    max_short_side REAL NOT NULL DEFAULT 10000,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1
   );
 
   CREATE TABLE IF NOT EXISTS stock_events (
@@ -106,6 +127,7 @@ db.exec(`
     address TEXT DEFAULT '',
     tax_id TEXT DEFAULT '',
     notes TEXT DEFAULT '',
+    deleted_at TEXT DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -279,6 +301,7 @@ db.exec(`
 `);
 
 ensureColumn("orders", "payment_status_manual", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("customers", "deleted_at", "TEXT DEFAULT ''");
 ensureColumn("payments", "payer_name", "TEXT DEFAULT ''");
 ensureColumn("payments", "received_by", "TEXT DEFAULT ''");
 for (const [columnName, definition] of MATERIAL_CATALOG_COLUMNS) {
@@ -293,8 +316,17 @@ ensureColumn("cut_parts", "work_drilling", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("cut_parts", "work_lacquer", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("cut_parts", "work_other", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("cut_jobs", "board_m2_actual", "REAL");
+ensureColumn("offcuts", "storage_location", "TEXT DEFAULT ''");
+ensureColumn("offcuts", "storage_note", "TEXT DEFAULT ''");
+ensureColumn("offcuts", "reserved_by", "TEXT DEFAULT ''");
+ensureColumn("offcuts", "reserved_at", "TEXT DEFAULT ''");
+ensureColumn("offcuts", "reserved_project", "TEXT DEFAULT ''");
+ensureColumn("offcuts", "source_station", "TEXT DEFAULT ''");
+ensureColumn("offcuts", "used_by", "TEXT DEFAULT ''");
+ensureColumn("offcuts", "used_at", "TEXT DEFAULT ''");
 normalizeExistingTextValues();
 seedDefaultPriceItems();
+seedDefaultOffcutStorageLocations();
 try {
   db.exec("PRAGMA wal_checkpoint(FULL)");
   createDailyAutoBackup({ dbPath, backupDir });
@@ -321,7 +353,19 @@ const selectStock = db.prepare(`
   SELECT m.*, COALESCE(s.quantity, 0) AS quantity, COALESCE(s.reserved, 0) AS reserved, COALESCE(s.used, 0) AS used
   FROM materials m
   LEFT JOIN stock s ON s.material_id = m.id
-  ORDER BY m.sort_order, m.id
+  ORDER BY
+    CASE
+      WHEN COALESCE(s.quantity, 0) <> 0
+        OR COALESCE(s.reserved, 0) <> 0
+        OR COALESCE(s.used, 0) <> 0
+      THEN 0
+      ELSE 1
+    END,
+    COALESCE(s.quantity, 0) DESC,
+    COALESCE(s.reserved, 0) DESC,
+    COALESCE(s.used, 0) DESC,
+    m.sort_order,
+    m.id
 `);
 const selectStockById = db.prepare(`
   SELECT m.*, COALESCE(s.quantity, 0) AS quantity, COALESCE(s.reserved, 0) AS reserved, COALESCE(s.used, 0) AS used
@@ -329,7 +373,7 @@ const selectStockById = db.prepare(`
   LEFT JOIN stock s ON s.material_id = m.id
   WHERE m.id = ?
 `);
-const selectCustomers = db.prepare("SELECT * FROM customers ORDER BY name COLLATE NOCASE, id");
+const selectCustomers = db.prepare("SELECT * FROM customers WHERE COALESCE(deleted_at, '') = '' ORDER BY name COLLATE NOCASE, id");
 const selectCustomer = db.prepare("SELECT * FROM customers WHERE id = ?");
 const selectDeliveries = db.prepare(`
   SELECT d.*,
@@ -567,15 +611,105 @@ app.get("/api/stock/:materialId/events", (request, response) => {
 });
 
 app.get("/api/offcuts", (request, response) => {
-  response.json(db.prepare("SELECT * FROM offcuts ORDER BY created_at DESC").all());
+  response.json(db.prepare(`
+    SELECT * FROM offcuts
+    ORDER BY
+      CASE WHEN status = 'available' THEN 0 WHEN status = 'reserved' THEN 1 ELSE 2 END,
+      created_at DESC
+  `).all());
+});
+
+app.get("/api/offcut-storage-locations", (request, response) => {
+  response.json(db.prepare("SELECT * FROM offcut_storage_locations ORDER BY sort_order, id").all());
+});
+
+app.post("/api/offcut-storage-locations", (request, response) => {
+  try {
+    const payload = normalizeOffcutStorageLocation(request.body);
+    const result = db.prepare(`
+      INSERT INTO offcut_storage_locations (
+        code, name, min_long_side, max_long_side, min_short_side, max_short_side, sort_order, active
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      payload.code,
+      payload.name,
+      payload.min_long_side,
+      payload.max_long_side,
+      payload.min_short_side,
+      payload.max_short_side,
+      payload.sort_order,
+      payload.active
+    );
+    response.status(201).json(db.prepare("SELECT * FROM offcut_storage_locations WHERE id = ?").get(result.lastInsertRowid));
+  } catch (error) {
+    response.status(400).json({ error: storageLocationErrorMessage(error) });
+  }
+});
+
+app.put("/api/offcut-storage-locations/:id", (request, response) => {
+  const id = Number(request.params.id || 0);
+  const existing = db.prepare("SELECT * FROM offcut_storage_locations WHERE id = ?").get(id);
+  if (!existing) return response.status(404).json({ error: "Storage location not found" });
+  try {
+    const payload = normalizeOffcutStorageLocation({ ...existing, ...request.body });
+    db.prepare(`
+      UPDATE offcut_storage_locations
+      SET code = ?, name = ?, min_long_side = ?, max_long_side = ?, min_short_side = ?, max_short_side = ?, sort_order = ?, active = ?
+      WHERE id = ?
+    `).run(
+      payload.code,
+      payload.name,
+      payload.min_long_side,
+      payload.max_long_side,
+      payload.min_short_side,
+      payload.max_short_side,
+      payload.sort_order,
+      payload.active,
+      id
+    );
+    response.json(db.prepare("SELECT * FROM offcut_storage_locations WHERE id = ?").get(id));
+  } catch (error) {
+    response.status(400).json({ error: storageLocationErrorMessage(error) });
+  }
+});
+
+app.delete("/api/offcut-storage-locations/:id", (request, response) => {
+  const id = Number(request.params.id || 0);
+  const existing = db.prepare("SELECT id FROM offcut_storage_locations WHERE id = ?").get(id);
+  if (!existing) return response.status(404).json({ error: "Storage location not found" });
+  db.prepare("DELETE FROM offcut_storage_locations WHERE id = ?").run(id);
+  response.status(204).end();
 });
 
 app.post("/api/offcuts", (request, response) => {
   const payload = normalizeOffcut(request.body);
   db.prepare(`
-    INSERT OR REPLACE INTO offcuts (id, material_id, code, length, width, quantity, is_business, project_name, project_path, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(payload.id, payload.material_id, payload.code, payload.length, payload.width, payload.quantity, payload.is_business, payload.project_name, payload.project_path, payload.status);
+    INSERT OR REPLACE INTO offcuts (
+      id, material_id, code, length, width, quantity, is_business, project_name, project_path,
+      storage_location, storage_note, reserved_by, reserved_at, reserved_project, source_station, used_by, used_at, status
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    payload.id,
+    payload.material_id,
+    payload.code,
+    payload.length,
+    payload.width,
+    payload.quantity,
+    payload.is_business,
+    payload.project_name,
+    payload.project_path,
+    payload.storage_location,
+    payload.storage_note,
+    payload.reserved_by,
+    payload.reserved_at,
+    payload.reserved_project,
+    payload.source_station,
+    payload.used_by,
+    payload.used_at,
+    payload.status
+  );
   response.status(201).json(db.prepare("SELECT * FROM offcuts WHERE id = ?").get(payload.id));
 });
 
@@ -586,9 +720,106 @@ app.put("/api/offcuts/:id", (request, response) => {
   const payload = normalizeOffcut({ ...existing, ...request.body, id });
   db.prepare(`
     UPDATE offcuts
-    SET material_id = ?, code = ?, length = ?, width = ?, quantity = ?, is_business = ?, project_name = ?, project_path = ?, status = ?
+    SET material_id = ?, code = ?, length = ?, width = ?, quantity = ?, is_business = ?, project_name = ?, project_path = ?,
+      storage_location = ?, storage_note = ?, reserved_by = ?, reserved_at = ?, reserved_project = ?, source_station = ?,
+      used_by = ?, used_at = ?, status = ?
     WHERE id = ?
-  `).run(payload.material_id, payload.code, payload.length, payload.width, payload.quantity, payload.is_business, payload.project_name, payload.project_path, payload.status, id);
+  `).run(
+    payload.material_id,
+    payload.code,
+    payload.length,
+    payload.width,
+    payload.quantity,
+    payload.is_business,
+    payload.project_name,
+    payload.project_path,
+    payload.storage_location,
+    payload.storage_note,
+    payload.reserved_by,
+    payload.reserved_at,
+    payload.reserved_project,
+    payload.source_station,
+    payload.used_by,
+    payload.used_at,
+    payload.status,
+    id
+  );
+  response.json(db.prepare("SELECT * FROM offcuts WHERE id = ?").get(id));
+});
+
+app.post("/api/offcuts/reassign-storage", (request, response) => {
+  const rows = db.prepare("SELECT id, length, width FROM offcuts WHERE status = 'available'").all();
+  const update = db.prepare("UPDATE offcuts SET storage_location = ? WHERE id = ?");
+  let updated = 0;
+  runInTransaction(() => {
+    for (const row of rows) {
+      update.run(assignOffcutStorageLocation(row.length, row.width), row.id);
+      updated += 1;
+    }
+  });
+  response.json({ updated });
+});
+
+app.post("/api/offcuts/:id/assign-storage", (request, response) => {
+  const id = String(request.params.id || "").trim();
+  const existing = db.prepare("SELECT * FROM offcuts WHERE id = ?").get(id);
+  if (!existing) return response.status(404).json({ error: "Offcut not found" });
+  const storageLocation = assignOffcutStorageLocation(existing.length, existing.width);
+  db.prepare("UPDATE offcuts SET storage_location = ? WHERE id = ?").run(storageLocation, id);
+  response.json(db.prepare("SELECT * FROM offcuts WHERE id = ?").get(id));
+});
+
+app.post("/api/offcuts/:id/reserve", (request, response) => {
+  const id = String(request.params.id || "").trim();
+  const station = normalizeStationName(request.body?.station || requestStation(request));
+  const project = String(request.body?.project || "").trim();
+  const existing = db.prepare("SELECT * FROM offcuts WHERE id = ?").get(id);
+  if (!existing) return response.status(404).json({ error: "Offcut not found" });
+  if (existing.status === "used") return response.status(409).json({ error: "Ta resztka jest już zużyta" });
+  if (existing.status === "reserved" && existing.reserved_by && existing.reserved_by !== station) {
+    return response.status(409).json({
+      error: `Ta resztka jest już zarezerwowana przez ${existing.reserved_by}`,
+      offcut: existing
+    });
+  }
+  db.prepare(`
+    UPDATE offcuts
+    SET status = 'reserved', reserved_by = ?, reserved_at = CURRENT_TIMESTAMP, reserved_project = ?
+    WHERE id = ? AND (status = 'available' OR (status = 'reserved' AND reserved_by = ?))
+  `).run(station, project, id, station);
+  response.json(db.prepare("SELECT * FROM offcuts WHERE id = ?").get(id));
+});
+
+app.post("/api/offcuts/:id/release", (request, response) => {
+  const id = String(request.params.id || "").trim();
+  const existing = db.prepare("SELECT * FROM offcuts WHERE id = ?").get(id);
+  if (!existing) return response.status(404).json({ error: "Offcut not found" });
+  if (existing.status === "used") return response.status(409).json({ error: "Zużytej resztki nie można zwolnić" });
+  db.prepare(`
+    UPDATE offcuts
+    SET status = 'available', reserved_by = '', reserved_at = '', reserved_project = ''
+    WHERE id = ?
+  `).run(id);
+  response.json(db.prepare("SELECT * FROM offcuts WHERE id = ?").get(id));
+});
+
+app.post("/api/offcuts/:id/use", (request, response) => {
+  const id = String(request.params.id || "").trim();
+  const station = normalizeStationName(request.body?.station || requestStation(request));
+  const existing = db.prepare("SELECT * FROM offcuts WHERE id = ?").get(id);
+  if (!existing) return response.status(404).json({ error: "Offcut not found" });
+  if (existing.status === "used") return response.status(409).json({ error: "Ta resztka jest już oznaczona jako zużyta" });
+  if (existing.status === "reserved" && existing.reserved_by && existing.reserved_by !== station) {
+    return response.status(409).json({
+      error: `Ta resztka jest zarezerwowana przez ${existing.reserved_by}`,
+      offcut: existing
+    });
+  }
+  db.prepare(`
+    UPDATE offcuts
+    SET status = 'used', used_by = ?, used_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(station, id);
   response.json(db.prepare("SELECT * FROM offcuts WHERE id = ?").get(id));
 });
 
@@ -680,6 +911,12 @@ app.get("/api/customers", (request, response) => {
   response.json(selectCustomers.all());
 });
 
+app.get("/api/customers/:id/related-documents", (request, response) => {
+  const id = Number(request.params.id);
+  if (!selectCustomer.get(id)) return response.status(404).json({ error: "Customer not found" });
+  response.json(getCustomerRelatedDocuments(id));
+});
+
 app.post("/api/customers", (request, response) => {
   const payload = normalizeCustomer(request.body);
   const result = db.prepare(`
@@ -705,7 +942,10 @@ app.delete("/api/customers/:id", (request, response) => {
   const id = Number(request.params.id);
   if (!selectCustomer.get(id)) return response.status(404).json({ error: "Customer not found" });
   const blockers = getCustomerDeleteBlockers(db, id);
-  if (blockers.length) return response.status(409).json({ error: "Customer cannot be deleted safely", blockers });
+  if (blockers.length) {
+    db.prepare("UPDATE customers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?").run(id);
+    return response.status(204).end();
+  }
   db.prepare("DELETE FROM customers WHERE id = ?").run(id);
   response.status(204).end();
 });
@@ -762,6 +1002,13 @@ app.delete("/api/orders/:id", (request, response) => {
   if (blockers.length) return response.status(409).json({ error: "Order cannot be deleted safely", blockers });
   db.prepare("DELETE FROM orders WHERE id = ?").run(id);
   response.status(204).end();
+});
+
+app.delete("/api/orders/:id/full", (request, response) => {
+  const id = Number(request.params.id);
+  if (!selectOrder.get(id)) return response.status(404).json({ error: "Order not found" });
+  const result = deleteOrderBundle(id);
+  response.json(result);
 });
 
 app.get("/api/orders/:id/payments", (request, response) => {
@@ -1474,17 +1721,34 @@ function normalizeRemainderRequestType(request, body) {
 function handleGibLabRemainders(request, response, type, body) {
   if (type === "load") {
     const code = String(request.header("code") || "");
+    const station = requestStation(request);
     const rows = db.prepare(`
       SELECT * FROM offcuts
-      WHERE status = 'available' AND (? = '' OR code = ?)
-      ORDER BY created_at DESC
-    `).all(code, code);
-    const text = rows.map((row) => [row.id, row.length, row.width, row.quantity, row.project_name].filter((value) => value !== "").join(",")).join("\n");
-    logIntegration("giblab", "load", request.headers, body, { rows: rows.length });
+      WHERE
+        (? = '' OR code = ?)
+        AND (
+          status = 'available'
+          OR (status = 'reserved' AND reserved_by = ?)
+        )
+      ORDER BY
+        CASE WHEN status = 'reserved' AND reserved_by = ? THEN 0 ELSE 1 END,
+        created_at DESC
+    `).all(code, code, station, station);
+    const text = rows.map((row) => [
+      row.id,
+      row.length,
+      row.width,
+      row.quantity,
+      row.project_name || "",
+      row.storage_location || "",
+      row.status === "reserved" ? row.reserved_by || "" : "",
+      row.reserved_project || ""
+    ].join(",").replace(/,+$/g, "")).join("\n");
+    logIntegration("giblab", "load", request.headers, body, { rows: rows.length, station });
     return response.type("text/plain; charset=utf-8").send(text);
   }
   if (type === "save" || type === "report") {
-    const result = importRemaindersReport(body, request.headers);
+    const result = importRemaindersReport(body, request.headers, requestStation(request));
     logIntegration("giblab", type, request.headers, body, result);
     return response.type("text/plain; charset=utf-8").send(`OK ${result.saved}`);
   }
@@ -1885,6 +2149,8 @@ function normalizeOffcut(input) {
   const length = Number(input.length || 0);
   const width = Number(input.width || 0);
   if (!length || !width) throw new Error("Offcut needs length and width");
+  const storageLocation = String(input.storage_location || "").trim();
+  const status = normalizeOffcutStatus(input.status);
   return {
     id: String(input.id || `${Date.now()}`),
     material_id: toNullableNumber(input.material_id),
@@ -1895,8 +2161,80 @@ function normalizeOffcut(input) {
     is_business: truthyNumber(input.is_business),
     project_name: String(input.project_name || ""),
     project_path: String(input.project_path || ""),
-    status: String(input.status || "available")
+    storage_location: storageLocation || assignOffcutStorageLocation(length, width),
+    storage_note: String(input.storage_note || ""),
+    reserved_by: status === "reserved" ? normalizeStationName(input.reserved_by || "") : "",
+    reserved_at: status === "reserved" ? String(input.reserved_at || "") : "",
+    reserved_project: status === "reserved" ? String(input.reserved_project || "") : "",
+    source_station: normalizeStationName(input.source_station || ""),
+    used_by: status === "used" ? normalizeStationName(input.used_by || "") : "",
+    used_at: status === "used" ? String(input.used_at || "") : "",
+    status
   };
+}
+
+function normalizeOffcutStatus(value) {
+  const status = String(value || "available").trim().toLowerCase();
+  if (["available", "reserved", "used"].includes(status)) return status;
+  return "available";
+}
+
+function normalizeStationName(value) {
+  return String(value || "")
+    .trim()
+    .replace(/[^\p{L}\p{N}_.-]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "UNKNOWN";
+}
+
+function requestStation(request) {
+  return normalizeStationName(
+    request.query.station ||
+    request.header("x-giblab-station") ||
+    request.header("station") ||
+    request.header("x-station") ||
+    request.hostname ||
+    "UNKNOWN"
+  );
+}
+
+function normalizeOffcutStorageLocation(input) {
+  const code = String(input.code || "").trim();
+  if (!code) throw new Error("Storage location needs code");
+  const minLongSide = toNonNegativeNumber(input.min_long_side);
+  const maxLongSide = toPositiveNumber(input.max_long_side, 10000);
+  const minShortSide = toNonNegativeNumber(input.min_short_side);
+  const maxShortSide = toPositiveNumber(input.max_short_side, 10000);
+  if (maxLongSide < minLongSide) throw new Error("Max long side cannot be smaller than min long side");
+  if (maxShortSide < minShortSide) throw new Error("Max short side cannot be smaller than min short side");
+  return {
+    code,
+    name: String(input.name || code).trim(),
+    min_long_side: minLongSide,
+    max_long_side: maxLongSide,
+    min_short_side: minShortSide,
+    max_short_side: maxShortSide,
+    sort_order: Number(input.sort_order || 0),
+    active: truthyNumber(input.active ?? 1)
+  };
+}
+
+function storageLocationErrorMessage(error) {
+  const message = String(error?.message || "");
+  if (message.includes("UNIQUE constraint failed")) return "Kod regału już istnieje";
+  return message || "Nie można zapisać regału";
+}
+
+function toNonNegativeNumber(value) {
+  if (value === "" || value === null || value === undefined) return 0;
+  const number = Number(String(value).replace(",", "."));
+  return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function toPositiveNumber(value, fallback) {
+  if (value === "" || value === null || value === undefined) return fallback;
+  const number = Number(String(value).replace(",", "."));
+  return Number.isFinite(number) && number > 0 ? number : fallback;
 }
 
 function toNullableNumber(value) {
@@ -1928,9 +2266,12 @@ function runInTransaction(callback) {
 }
 
 function nextMaterialId(isfolder) {
-  const minimum = isfolder ? 1 : 1001;
-  const row = db.prepare("SELECT MAX(id) AS max_id FROM materials WHERE id >= ?").get(minimum);
-  return Math.max(minimum, Number(row.max_id || minimum - 1) + 1);
+  if (isfolder) {
+    const row = db.prepare("SELECT MAX(id) AS max_id FROM materials WHERE id >= 1 AND id < 1000").get();
+    return Math.max(1, Number(row.max_id || 0) + 1);
+  }
+  const row = db.prepare("SELECT MAX(id) AS max_id FROM materials WHERE id >= 1001").get();
+  return Math.max(1001, Number(row.max_id || 1000) + 1);
 }
 
 function readCatalogImportRows(buffer, filename = "") {
@@ -2233,10 +2574,11 @@ function importProject(xml, projectName, projectPath = projectName) {
       const length = Number(part.l || part.length || 0);
       const width = Number(part.w || part.width || 0);
       if (!length || !width) continue;
+      const storageLocation = assignOffcutStorageLocation(length, width);
       db.prepare(`
-        INSERT OR REPLACE INTO offcuts (id, code, length, width, quantity, is_business, project_name, project_path, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'available')
-      `).run(id, sheetGood?.code || "", length, width, Number(part.count || 1), truthyNumber(part.business), projectName, projectPath);
+        INSERT OR REPLACE INTO offcuts (id, code, length, width, quantity, is_business, project_name, project_path, storage_location, source_station, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available')
+      `).run(id, sheetGood?.code || "", length, width, Number(part.count || 1), truthyNumber(part.business), projectName, projectPath, storageLocation, "APP");
       offcutCount += 1;
     }
 
@@ -2244,12 +2586,15 @@ function importProject(xml, projectName, projectPath = projectName) {
   });
 }
 
-function importRemaindersReport(text, headers) {
+function importRemaindersReport(text, headers, station = "UNKNOWN") {
   const code = String(headers.code || "");
   const projectNameHeader = String(headers["project.name"] || headers.projectname || "");
   const insert = db.prepare(`
-    INSERT OR REPLACE INTO offcuts (id, material_id, code, length, width, quantity, is_business, project_name, project_path, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'available')
+    INSERT OR REPLACE INTO offcuts (
+      id, material_id, code, length, width, quantity, is_business, project_name, project_path,
+      storage_location, reserved_by, reserved_at, reserved_project, source_station, used_by, used_at, status
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', '', ?, '', '', 'available')
   `);
   let saved = 0;
   for (const line of text.split(/\r?\n/)) {
@@ -2259,21 +2604,39 @@ function importRemaindersReport(text, headers) {
       const [projectOffcutId, externalId, isSheetOrOffcut, isBusiness, length, width, initialQuantity, usedQuantity, ...projectParts] = parts;
       const quantity = Math.max(0, Number(initialQuantity || 0) - Number(usedQuantity || 0));
       if (!quantity) continue;
+      const parsedLength = Number(length || 0);
+      const parsedWidth = Number(width || 0);
       insert.run(
         externalId || projectOffcutId,
         null,
         code,
-        Number(length || 0),
-        Number(width || 0),
+        parsedLength,
+        parsedWidth,
         quantity,
         truthyNumber(isBusiness),
         projectParts[0] || projectNameHeader,
         projectParts.slice(1).join(","),
+        assignOffcutStorageLocation(parsedLength, parsedWidth),
+        normalizeStationName(station)
       );
       saved += 1;
     } else if (parts.length >= 4) {
       const [id, length, width, quantity, comment = ""] = parts;
-      insert.run(id, null, code, Number(length || 0), Number(width || 0), Number(quantity || 1), 0, comment || projectNameHeader, "");
+      const parsedLength = Number(length || 0);
+      const parsedWidth = Number(width || 0);
+      insert.run(
+        id,
+        null,
+        code,
+        parsedLength,
+        parsedWidth,
+        Number(quantity || 1),
+        0,
+        comment || projectNameHeader,
+        "",
+        assignOffcutStorageLocation(parsedLength, parsedWidth),
+        normalizeStationName(station)
+      );
       saved += 1;
     }
   }
@@ -2474,6 +2837,155 @@ function seedDefaultPriceItems() {
       if (!existing.get(row[1])) insert.run(...row);
     }
   });
+}
+
+function seedDefaultOffcutStorageLocations() {
+  const existing = db.prepare("SELECT id FROM offcut_storage_locations WHERE code = ? LIMIT 1");
+  const insert = db.prepare(`
+    INSERT INTO offcut_storage_locations (
+      code, name, min_long_side, max_long_side, min_short_side, max_short_side, sort_order, active
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+  `);
+  runInTransaction(() => {
+    for (const location of DEFAULT_OFFCUT_STORAGE_LOCATIONS) {
+      if (!existing.get(location.code)) {
+        insert.run(
+          location.code,
+          location.name,
+          location.min_long_side,
+          location.max_long_side,
+          location.min_short_side,
+          location.max_short_side,
+          location.sort_order
+        );
+      }
+    }
+  });
+}
+
+function offcutStorageLocations() {
+  return db.prepare(`
+    SELECT * FROM offcut_storage_locations
+    WHERE active = 1
+    ORDER BY sort_order, id
+  `).all();
+}
+
+function assignOffcutStorageLocation(length, width) {
+  return chooseOffcutStorageLocation({ length, width }, offcutStorageLocations());
+}
+
+function getCustomerRelatedDocuments(customerId) {
+  const orders = db.prepare(`
+    SELECT * FROM orders
+    WHERE customer_id = ?
+    ORDER BY created_at DESC, id DESC
+  `).all(customerId);
+  const documents = [];
+  for (const order of orders) {
+    const blockers = getOrderDeleteBlockers(db, order.id);
+    documents.push({
+      type: "order",
+      type_label: "Zamówienie",
+      id: order.id,
+      parent_id: "",
+      document: order.order_number || `ID ${order.id}`,
+      relation: order.title || "",
+      value: Number(order.total_amount || 0),
+      can_delete: blockers.length === 0,
+      delete_url: `/api/orders/${order.id}`,
+      blockers
+    });
+
+    const payments = db.prepare("SELECT * FROM payments WHERE order_id = ? ORDER BY payment_date DESC, id DESC").all(order.id);
+    for (const payment of payments) {
+      documents.push({
+        type: "payment",
+        type_label: "Wpłata",
+        id: payment.id,
+        parent_id: order.id,
+        document: `${order.order_number || order.id} / wpłata ${payment.id}`,
+        relation: payment.payment_date || "",
+        value: Number(payment.amount || 0),
+        can_delete: true,
+        delete_url: `/api/payments/${payment.id}`,
+        blockers: []
+      });
+    }
+
+    const quoteLines = db.prepare("SELECT * FROM quote_lines WHERE order_id = ? ORDER BY id").all(order.id);
+    for (const line of quoteLines) {
+      documents.push({
+        type: "quote_line",
+        type_label: "Wycena",
+        id: line.id,
+        parent_id: order.id,
+        document: `${order.order_number || order.id} / wycena ${line.id}`,
+        relation: line.description || "",
+        value: Number(line.line_total || 0),
+        can_delete: true,
+        delete_url: `/api/quote-lines/${line.id}`,
+        blockers: []
+      });
+    }
+
+    const cutJobs = db.prepare(`
+      SELECT j.*, COUNT(p.id) AS part_count
+      FROM cut_jobs j
+      LEFT JOIN cut_parts p ON p.cut_job_id = j.id
+      WHERE j.order_id = ?
+      GROUP BY j.id
+      ORDER BY j.id
+    `).all(order.id);
+    for (const job of cutJobs) {
+      documents.push({
+        type: "cut_job",
+        type_label: "Formatki",
+        id: job.id,
+        parent_id: order.id,
+        document: `${order.order_number || order.id} / formatki ${job.id}`,
+        relation: `${job.name || ""}${job.part_count ? ` (${job.part_count} szt.)` : ""}`,
+        value: 0,
+        can_delete: true,
+        delete_url: `/api/cut-jobs/${job.id}`,
+        blockers: []
+      });
+    }
+  }
+  return documents;
+}
+
+function deleteOrderBundle(orderId) {
+  const counters = {
+    payments: 0,
+    quote_lines: 0,
+    cut_parts: 0,
+    cut_jobs: 0,
+    orders: 0
+  };
+  runInTransaction(() => {
+    const cutJobs = db.prepare("SELECT id FROM cut_jobs WHERE order_id = ?").all(orderId);
+    counters.cut_parts = Number(db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM cut_parts
+      WHERE cut_job_id IN (SELECT id FROM cut_jobs WHERE order_id = ?)
+    `).get(orderId).count || 0);
+    db.prepare("DELETE FROM cut_parts WHERE cut_job_id IN (SELECT id FROM cut_jobs WHERE order_id = ?)").run(orderId);
+
+    counters.quote_lines = Number(db.prepare("SELECT COUNT(*) AS count FROM quote_lines WHERE order_id = ?").get(orderId).count || 0);
+    db.prepare("DELETE FROM quote_lines WHERE order_id = ?").run(orderId);
+
+    counters.cut_jobs = cutJobs.length;
+    db.prepare("DELETE FROM cut_jobs WHERE order_id = ?").run(orderId);
+
+    counters.payments = Number(db.prepare("SELECT COUNT(*) AS count FROM payments WHERE order_id = ?").get(orderId).count || 0);
+    db.prepare("DELETE FROM payments WHERE order_id = ?").run(orderId);
+
+    const deleteResult = db.prepare("DELETE FROM orders WHERE id = ?").run(orderId);
+    counters.orders = deleteResult.changes;
+  });
+  return counters;
 }
 
 function nextOrderNumber() {

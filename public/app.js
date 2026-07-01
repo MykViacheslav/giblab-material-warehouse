@@ -16,17 +16,22 @@
   purchaseNeeds: { rows: [], summary: null },
   backups: [],
   materialImportRows: [],
+  offcutStorageLocations: [],
+  customerRelatedDocs: [],
   selectedId: null,
   selectedCustomerId: null,
   selectedOrderId: null,
   selectedPriceItemId: null,
   selectedSupplyId: null,
   selectedOffcutId: null,
+  selectedOffcutStorageLocationId: null,
+  selectedCustomerDocIndex: null,
   selectedCutJobId: null,
   selectedDeliveryId: null,
   selectedDeliveryCorrectionId: null,
   activeDashboardPanel: "today",
-  collapsed: new Set()
+  collapsed: new Set(),
+  materialCollapsed: new Set()
 };
 
 const elements = {
@@ -39,6 +44,8 @@ const elements = {
   stockHistoryPanel: document.querySelector("#stockHistoryPanel"),
   offcutsBody: document.querySelector("#offcutsBody"),
   customersBody: document.querySelector("#customersBody"),
+  customerDocsBody: document.querySelector("#customerDocsBody"),
+  customerDocsStatus: document.querySelector("#customerDocsStatus"),
   ordersBody: document.querySelector("#ordersBody"),
   dashboardCards: document.querySelector("#dashboardCards"),
   dashboardTodayBody: document.querySelector("#dashboardTodayBody"),
@@ -47,6 +54,12 @@ const elements = {
   calendarBody: document.querySelector("#calendarBody"),
   calendarSummary: document.querySelector("#calendarSummary"),
   materialForm: document.querySelector("#materialForm"),
+  materialSearchFilter: document.querySelector("#materialSearchFilter"),
+  materialProducerFilter: document.querySelector("#materialProducerFilter"),
+  materialThicknessFilter: document.querySelector("#materialThicknessFilter"),
+  materialTypeFilter: document.querySelector("#materialTypeFilter"),
+  clearMaterialFiltersBtn: document.querySelector("#clearMaterialFiltersBtn"),
+  newMaterialFolderBtn: document.querySelector("#newMaterialFolderBtn"),
   materialImportFile: document.querySelector("#materialImportFile"),
   materialImportMode: document.querySelector("#materialImportMode"),
   materialImportFilter: document.querySelector("#materialImportFilter"),
@@ -85,12 +98,18 @@ const elements = {
   backupsBody: document.querySelector("#backupsBody"),
   backupStatus: document.querySelector("#backupStatus"),
   offcutForm: document.querySelector("#offcutForm"),
+  offcutStorageForm: document.querySelector("#offcutStorageForm"),
+  offcutStorageBody: document.querySelector("#offcutStorageBody"),
+  clearOffcutStorageBtn: document.querySelector("#clearOffcutStorageBtn"),
+  reassignOffcutStorageBtn: document.querySelector("#reassignOffcutStorageBtn"),
   supplyForm: document.querySelector("#supplyForm"),
   suppliesBody: document.querySelector("#suppliesBody"),
   clearSupplyBtn: document.querySelector("#clearSupplyBtn"),
   customerForm: document.querySelector("#customerForm"),
   editSelectedCustomerBtn: document.querySelector("#editSelectedCustomerBtn"),
   deleteSelectedCustomerBtn: document.querySelector("#deleteSelectedCustomerBtn"),
+  deleteSelectedCustomerDocsBtn: document.querySelector("#deleteSelectedCustomerDocsBtn"),
+  deleteSelectedCustomerOrderBundleBtn: document.querySelector("#deleteSelectedCustomerOrderBundleBtn"),
   orderForm: document.querySelector("#orderForm"),
   editSelectedOrderBtn: document.querySelector("#editSelectedOrderBtn"),
   deleteSelectedOrderBtn: document.querySelector("#deleteSelectedOrderBtn"),
@@ -133,6 +152,10 @@ const elements = {
   deleteCutJobBtn: document.querySelector("#deleteCutJobBtn"),
   editSelectedMaterialBtn: document.querySelector("#editSelectedMaterialBtn"),
   deleteSelectedMaterialBtn: document.querySelector("#deleteSelectedMaterialBtn"),
+  assignSelectedOffcutStorageBtn: document.querySelector("#assignSelectedOffcutStorageBtn"),
+  reserveSelectedOffcutBtn: document.querySelector("#reserveSelectedOffcutBtn"),
+  releaseSelectedOffcutBtn: document.querySelector("#releaseSelectedOffcutBtn"),
+  useSelectedOffcutBtn: document.querySelector("#useSelectedOffcutBtn"),
   editSelectedOffcutBtn: document.querySelector("#editSelectedOffcutBtn"),
   deleteSelectedOffcutBtn: document.querySelector("#deleteSelectedOffcutBtn"),
   openCutExportFolderBtn: document.querySelector("#openCutExportFolderBtn"),
@@ -141,11 +164,13 @@ const elements = {
   remainderLogs: document.querySelector("#remainderLogs"),
   remaindersUrlText: document.querySelector("#remaindersUrlText"),
   copyRemaindersUrlBtn: document.querySelector("#copyRemaindersUrlBtn"),
+  offcutStationName: document.querySelector("#offcutStationName"),
   toast: document.querySelector("#toast")
 };
 
 const treeHiddenSetting = localStorage.getItem("giblabTreeHidden") === "1";
 setTreeHidden(treeHiddenSetting);
+initializeStationName();
 
 window.addEventListener("unhandledrejection", (event) => {
   const message = event.reason?.message || "Operacja nie powiodła się";
@@ -257,10 +282,7 @@ document.querySelector("#polishCatalogBtn").addEventListener("click", async () =
 });
 
 document.querySelector("#clearFormBtn").addEventListener("click", () => {
-  state.selectedId = null;
-  elements.materialForm.reset();
-  elements.materialForm.elements.is_active.checked = true;
-  renderMaterials();
+  resetMaterialForm();
 });
 
 elements.editSelectedMaterialBtn?.addEventListener("click", () => {
@@ -270,10 +292,35 @@ elements.editSelectedMaterialBtn?.addEventListener("click", () => {
 
 elements.deleteSelectedMaterialBtn?.addEventListener("click", deleteSelectedMaterial);
 
+elements.newMaterialFolderBtn?.addEventListener("click", () => {
+  const parent = selectedMaterialFolderId();
+  resetMaterialForm();
+  elements.materialForm.elements.isfolder.checked = true;
+  if (parent) elements.materialForm.elements.paren_id.value = String(parent);
+  elements.materialForm.elements.name.focus();
+  showToast(parent ? `Nowy folder w folderze ID ${parent}` : "Nowy folder główny");
+});
+
+[elements.materialSearchFilter, elements.materialProducerFilter, elements.materialThicknessFilter, elements.materialTypeFilter]
+  .forEach((field) => {
+    field?.addEventListener("input", renderMaterials);
+    field?.addEventListener("change", renderMaterials);
+  });
+
+elements.clearMaterialFiltersBtn?.addEventListener("click", () => {
+  elements.materialSearchFilter.value = "";
+  elements.materialProducerFilter.value = "";
+  elements.materialThicknessFilter.value = "";
+  elements.materialTypeFilter.value = "";
+  renderMaterials();
+});
+
 document.querySelector("#clearCustomerBtn").addEventListener("click", () => {
   state.selectedCustomerId = null;
+  state.customerRelatedDocs = [];
   elements.customerForm.reset();
   renderCustomers();
+  renderCustomerRelatedDocs();
 });
 
 document.querySelector("#clearOrderBtn").addEventListener("click", resetOrderWorkspace);
@@ -287,6 +334,8 @@ elements.editSelectedCustomerBtn?.addEventListener("click", () => {
 });
 
 elements.deleteSelectedCustomerBtn?.addEventListener("click", deleteSelectedCustomer);
+elements.deleteSelectedCustomerDocsBtn?.addEventListener("click", deleteSelectedCustomerDocs);
+elements.deleteSelectedCustomerOrderBundleBtn?.addEventListener("click", deleteSelectedCustomerOrderBundle);
 
 elements.editSelectedOrderBtn?.addEventListener("click", () => {
   if (!state.selectedOrderId) return showToast("Najpierw zaznacz zamówienie");
@@ -600,12 +649,11 @@ document.querySelector("#edgeAll").addEventListener("change", (event) => {
 elements.materialForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const payload = formPayload(elements.materialForm);
+  if (!state.selectedId) delete payload.id;
   const url = state.selectedId ? `/api/materials/${state.selectedId}` : "/api/materials";
   await postJson(url, payload, state.selectedId ? "PUT" : "POST");
-  state.selectedId = null;
-  elements.materialForm.reset();
-  elements.materialForm.elements.is_active.checked = true;
   await refreshAll();
+  resetMaterialForm();
   showToast("Pozycja katalogu zapisana");
 });
 
@@ -759,7 +807,41 @@ elements.editSelectedOffcutBtn?.addEventListener("click", () => {
   fillOffcutForm(state.selectedOffcutId);
 });
 
+elements.assignSelectedOffcutStorageBtn?.addEventListener("click", assignSelectedOffcutStorage);
+
+elements.reserveSelectedOffcutBtn?.addEventListener("click", reserveSelectedOffcut);
+
+elements.releaseSelectedOffcutBtn?.addEventListener("click", releaseSelectedOffcut);
+
+elements.useSelectedOffcutBtn?.addEventListener("click", useSelectedOffcut);
+
 elements.deleteSelectedOffcutBtn?.addEventListener("click", deleteSelectedOffcut);
+
+elements.offcutStationName?.addEventListener("change", () => {
+  localStorage.setItem("giblabStationName", getStationName());
+  updateRemaindersUrl();
+});
+
+elements.offcutStorageForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const payload = formPayload(elements.offcutStorageForm);
+  const id = state.selectedOffcutStorageLocationId;
+  const url = id ? `/api/offcut-storage-locations/${id}` : "/api/offcut-storage-locations";
+  await postJson(url, payload, id ? "PUT" : "POST");
+  state.selectedOffcutStorageLocationId = null;
+  elements.offcutStorageForm.reset();
+  elements.offcutStorageForm.elements.active.checked = true;
+  await refreshOffcutStorageLocations();
+  showToast("Regał zapisany");
+});
+
+elements.clearOffcutStorageBtn?.addEventListener("click", () => {
+  state.selectedOffcutStorageLocationId = null;
+  elements.offcutStorageForm.reset();
+  elements.offcutStorageForm.elements.active.checked = true;
+});
+
+elements.reassignOffcutStorageBtn?.addEventListener("click", reassignAllOffcutStorage);
 
 if (elements.supplyForm) {
   elements.supplyForm.addEventListener("submit", async (event) => {
@@ -807,6 +889,7 @@ async function refreshAll() {
   state.flat = flat;
   state.tree = tree;
   renderTree();
+  renderMaterialFilters();
   renderMaterials();
   renderStock();
   await refreshCrm();
@@ -816,9 +899,29 @@ async function refreshAll() {
   await refreshPurchaseNeeds();
   await refreshBackups();
   await refreshCutting();
+  await refreshOffcutStorageLocations();
   await refreshOffcuts();
   renderCalendar();
   renderDashboard();
+}
+
+function initializeStationName() {
+  if (!elements.offcutStationName) return;
+  const stored = localStorage.getItem("giblabStationName");
+  elements.offcutStationName.value = stored || window.location.hostname || "MAGAZYN";
+  localStorage.setItem("giblabStationName", getStationName());
+  updateRemaindersUrl();
+}
+
+function getStationName() {
+  const value = elements.offcutStationName?.value || localStorage.getItem("giblabStationName") || window.location.hostname || "MAGAZYN";
+  return String(value).trim().replace(/[^\p{L}\p{N}_.-]+/gu, "-").replace(/^-+|-+$/g, "") || "MAGAZYN";
+}
+
+function updateRemaindersUrl() {
+  if (!elements.remaindersUrlText) return;
+  const station = encodeURIComponent(getStationName());
+  elements.remaindersUrlText.textContent = `${window.location.origin}/giblab/remainders?station=${station}`;
 }
 
 async function refreshCrm() {
@@ -828,7 +931,12 @@ async function refreshCrm() {
   ]);
   state.customers = customers;
   state.orders = orders;
+  if (state.selectedCustomerId && !state.customers.some((customer) => Number(customer.id) === Number(state.selectedCustomerId))) {
+    state.selectedCustomerId = null;
+    state.customerRelatedDocs = [];
+  }
   renderCustomers();
+  renderCustomerRelatedDocs();
   renderCustomerSelect();
   renderPayerCustomerSelect();
   renderQuoteOrderSelect();
@@ -914,6 +1022,36 @@ async function loadCutParts(jobId) {
   renderCutQuoteLines();
 }
 
+async function refreshOffcutStorageLocations() {
+  if (!elements.offcutStorageBody) return;
+  state.offcutStorageLocations = await fetchJson("/api/offcut-storage-locations");
+  elements.offcutStorageBody.innerHTML = state.offcutStorageLocations.map((row) => `
+    <tr class="material-row ${Number(row.id) === Number(state.selectedOffcutStorageLocationId) ? "selected-row" : ""}" data-id="${row.id}">
+      <td>${row.id}</td>
+      <td>${escapeHtml(row.code)}</td>
+      <td>${escapeHtml(row.name)}</td>
+      <td>${formatNumber(row.min_long_side)} - ${formatNumber(row.max_long_side)}</td>
+      <td>${formatNumber(row.min_short_side)} - ${formatNumber(row.max_short_side)}</td>
+      <td>${formatNumber(row.sort_order)}</td>
+      <td>${row.active ? "tak" : "nie"}</td>
+      <td>
+        <button type="button" data-action="edit">Edytuj</button>
+        <button type="button" class="danger" data-action="delete">Usuń</button>
+      </td>
+    </tr>
+  `).join("");
+  elements.offcutStorageBody.querySelectorAll("tr").forEach((rowElement) => {
+    rowElement.addEventListener("click", (event) => {
+      const id = Number(rowElement.dataset.id);
+      const action = event.target?.dataset?.action;
+      if (action === "edit") return fillOffcutStorageForm(id);
+      if (action === "delete") return deleteOffcutStorageLocation(id);
+      state.selectedOffcutStorageLocationId = id;
+      refreshOffcutStorageLocations();
+    });
+  });
+}
+
 async function refreshOffcuts() {
   state.offcuts = await fetchJson("/api/offcuts");
   elements.offcutsBody.innerHTML = state.offcuts.map((row) => `
@@ -925,7 +1063,10 @@ async function refreshOffcuts() {
       <td>${formatNumber(row.quantity)}</td>
       <td>${row.is_business ? "delowa" : "zwykła"}</td>
       <td>${escapeHtml(row.project_name)}</td>
-      <td>${escapeHtml(row.status)}</td>
+      <td>${escapeHtml(row.storage_location || "")}</td>
+      <td>${formatOffcutStatus(row)}</td>
+      <td>${escapeHtml(row.reserved_project || "")}</td>
+      <td>${escapeHtml(row.reserved_by || row.source_station || row.used_by || "")}</td>
     </tr>
   `).join("");
   elements.offcutsBody.querySelectorAll("tr").forEach((rowElement) => {
@@ -976,13 +1117,16 @@ function setTreeHidden(hidden) {
 }
 
 function renderMaterials() {
-  elements.materialsBody.innerHTML = state.flat.map((row) => `
+  const rows = materialTableRows();
+  elements.materialsBody.innerHTML = rows.map((row) => `
     <tr class="${row.isfolder ? "folder-row" : "material-row"} ${String(row.id) === String(state.selectedId) ? "selected-row" : ""}" data-id="${row.id}">
       <td>${row.id}</td>
-      <td>${row.paren_id ?? ""}</td>
-      <td>${row.isfolder ? "1" : "0"}</td>
+      <td class="material-name-cell">
+        <span class="material-indent" style="width:${Math.max(0, row._depth || 0) * 18}px"></span>
+        ${row._hasChildren ? `<button class="material-folder-toggle" data-material-toggle="${row.id}" type="button" title="${state.materialCollapsed.has(row.id) ? "Rozwiń folder" : "Zwiń folder"}">${state.materialCollapsed.has(row.id) ? "+" : "−"}</button>` : `<span class="material-folder-spacer"></span>`}
+        <span>${escapeHtml(row.name)}</span>
+      </td>
       <td>${escapeHtml(row.code)}</td>
-      <td>${escapeHtml(row.name)}</td>
       <td>${escapeHtml(row.producer || "")}</td>
       <td>${escapeHtml([row.decor_code, row.decor_name].filter(Boolean).join(" "))}</td>
       <td>${escapeHtml(row.structure || "")}</td>
@@ -997,12 +1141,112 @@ function renderMaterials() {
       <td>${row.is_active === 0 ? "0" : "1"}</td>
     </tr>
   `).join("");
+  elements.materialsBody.querySelectorAll("[data-material-toggle]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const id = Number(button.dataset.materialToggle);
+      if (state.materialCollapsed.has(id)) state.materialCollapsed.delete(id);
+      else state.materialCollapsed.add(id);
+      renderMaterials();
+    });
+  });
   elements.materialsBody.querySelectorAll("tr").forEach((rowElement) => {
     rowElement.addEventListener("click", () => {
       state.selectedId = Number(rowElement.dataset.id);
       renderMaterials();
     });
   });
+}
+
+function materialTableRows() {
+  if (hasMaterialFilters()) {
+    return filteredMaterials().map((row) => ({ ...row, _depth: 0, _hasChildren: false }));
+  }
+  return flattenMaterialTreeRows(state.tree);
+}
+
+function flattenMaterialTreeRows(rows, depth = 0) {
+  return rows.flatMap((row) => {
+    const hasChildren = Boolean(row.children?.length);
+    const current = { ...row, _depth: depth, _hasChildren: hasChildren };
+    if (!hasChildren || state.materialCollapsed.has(row.id)) return [current];
+    return [current].concat(flattenMaterialTreeRows(row.children, depth + 1));
+  });
+}
+
+function hasMaterialFilters() {
+  return Boolean(
+    String(elements.materialSearchFilter?.value || "").trim()
+    || elements.materialProducerFilter?.value
+    || elements.materialThicknessFilter?.value
+    || elements.materialTypeFilter?.value
+  );
+}
+
+function renderMaterialFilters() {
+  fillSimpleFilterSelect(elements.materialProducerFilter, "Producent: wszyscy", uniqueMaterialValues("producer"));
+  fillSimpleFilterSelect(elements.materialThicknessFilter, "Grubość: wszystkie", uniqueMaterialValues("thickness"));
+  fillSimpleFilterSelect(elements.materialTypeFilter, "Typ: wszystkie", uniqueMaterialValues("material_type"));
+}
+
+function fillSimpleFilterSelect(select, label, values) {
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = [`<option value="">${escapeHtml(label)}</option>`]
+    .concat(values.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`))
+    .join("");
+  select.value = values.includes(current) ? current : "";
+}
+
+function uniqueMaterialValues(field) {
+  return [...new Set(state.flat
+    .filter((row) => !row.isfolder)
+    .map((row) => row[field] === null || row[field] === undefined ? "" : String(row[field]).trim())
+    .filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "pl", { numeric: true }));
+}
+
+function filteredMaterials() {
+  const search = String(elements.materialSearchFilter?.value || "").trim().toLowerCase();
+  const producer = String(elements.materialProducerFilter?.value || "");
+  const thickness = String(elements.materialThicknessFilter?.value || "");
+  const type = String(elements.materialTypeFilter?.value || "");
+  return state.flat.filter((row) => {
+    if (producer && String(row.producer || "") !== producer) return false;
+    if (thickness && String(row.thickness ?? "") !== thickness) return false;
+    if (type && String(row.material_type || "") !== type) return false;
+    if (!search) return true;
+    return [
+      row.id,
+      row.paren_id,
+      row.code,
+      row.name,
+      row.producer,
+      row.decor_code,
+      row.decor_name,
+      row.structure,
+      row.material_type,
+      row.thickness,
+      row.length,
+      row.width,
+      row.supplier,
+      row.location
+    ].some((value) => String(value ?? "").toLowerCase().includes(search));
+  });
+}
+
+function resetMaterialForm() {
+  state.selectedId = null;
+  elements.materialForm.reset();
+  elements.materialForm.elements.id.value = "";
+  elements.materialForm.elements.is_active.checked = true;
+  renderMaterials();
+}
+
+function selectedMaterialFolderId() {
+  const selected = state.flat.find((row) => Number(row.id) === Number(state.selectedId));
+  if (!selected) return null;
+  return selected.isfolder ? selected.id : selected.paren_id || null;
 }
 
 function renderStock() {
@@ -1179,11 +1423,86 @@ function renderCustomers() {
     `;
   }).join("");
   elements.customersBody.querySelectorAll("tr").forEach((rowElement) => {
-    rowElement.addEventListener("click", () => {
+    rowElement.addEventListener("click", async () => {
       state.selectedCustomerId = Number(rowElement.dataset.id);
       renderCustomers();
+      await loadCustomerRelatedDocs(state.selectedCustomerId);
     });
   });
+}
+
+function formatOffcutStatus(row) {
+  if (row.status === "reserved") return `zarezerwowana: ${escapeHtml(row.reserved_by || "")}`;
+  if (row.status === "used") return `zużyta: ${escapeHtml(row.used_by || "")}`;
+  return "wolna";
+}
+
+async function loadCustomerRelatedDocs(customerId) {
+  if (!elements.customerDocsBody) return;
+  state.customerRelatedDocs = customerId
+    ? await fetchJson(`/api/customers/${customerId}/related-documents`)
+    : [];
+  renderCustomerRelatedDocs();
+}
+
+function renderCustomerRelatedDocs() {
+  if (!elements.customerDocsBody) return;
+  const selectedCustomer = state.customers.find((customer) => Number(customer.id) === Number(state.selectedCustomerId));
+  if (!selectedCustomer) {
+    elements.customerDocsBody.innerHTML = `<tr><td colspan="8">Zaznacz klienta, żeby zobaczyć powiązane dokumenty.</td></tr>`;
+    if (elements.customerDocsStatus) elements.customerDocsStatus.textContent = "";
+    state.selectedCustomerDocIndex = null;
+    return;
+  }
+  if (!state.customerRelatedDocs.length) {
+    elements.customerDocsBody.innerHTML = `<tr><td colspan="8">Brak powiązanych dokumentów dla klienta ${escapeHtml(selectedCustomer.name)}.</td></tr>`;
+    if (elements.customerDocsStatus) elements.customerDocsStatus.textContent = "Tego klienta można usunąć całkowicie.";
+    state.selectedCustomerDocIndex = null;
+    return;
+  }
+  elements.customerDocsBody.innerHTML = state.customerRelatedDocs.map((row, index) => {
+    const blockers = Array.isArray(row.blockers) && row.blockers.length
+      ? row.blockers.map((blocker) => escapeHtml(blocker.message || blocker.code)).join("<br>")
+      : "";
+    const isSelected = Number(state.selectedCustomerDocIndex) === index;
+    const orderBundleButton = row.type === "order" && !row.can_delete
+      ? `<button type="button" class="danger" data-delete-order-bundle-index="${index}">Usuń komplet</button>`
+      : "";
+    return `
+      <tr class="material-row ${isSelected ? "selected-row" : ""}" data-index="${index}">
+        <td>${row.can_delete ? `<input type="checkbox" data-doc-index="${index}">` : ""}</td>
+        <td>${escapeHtml(row.type_label)}</td>
+        <td>${escapeHtml(row.document)}</td>
+        <td>${escapeHtml(row.relation)}</td>
+        <td>${formatMoney(row.value || 0)}</td>
+        <td>${row.can_delete ? "tak" : "nie"}</td>
+        <td>${blockers}</td>
+        <td>${row.can_delete ? `<button type="button" class="danger" data-delete-doc-index="${index}">Usuń</button>` : ""}${orderBundleButton}</td>
+      </tr>
+    `;
+  }).join("");
+  elements.customerDocsBody.querySelectorAll("tr[data-index]").forEach((rowElement) => {
+    rowElement.addEventListener("click", (event) => {
+      if (event.target?.matches?.("button,input")) return;
+      state.selectedCustomerDocIndex = Number(rowElement.dataset.index);
+      renderCustomerRelatedDocs();
+    });
+  });
+  elements.customerDocsBody.querySelectorAll("[data-delete-doc-index]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await deleteCustomerDocumentByIndex(Number(button.dataset.deleteDocIndex));
+    });
+  });
+  elements.customerDocsBody.querySelectorAll("[data-delete-order-bundle-index]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await deleteCustomerOrderBundleByIndex(Number(button.dataset.deleteOrderBundleIndex));
+    });
+  });
+  const deletableCount = state.customerRelatedDocs.filter((row) => row.can_delete).length;
+  const blockedCount = state.customerRelatedDocs.length - deletableCount;
+  if (elements.customerDocsStatus) {
+    elements.customerDocsStatus.textContent = `Dokumenty: ${state.customerRelatedDocs.length}, można usunąć: ${deletableCount}, zablokowane: ${blockedCount}`;
+  }
 }
 
 function renderCustomerSelect() {
@@ -2354,19 +2673,74 @@ function selectOrderRow(id) {
 
 async function deleteSelectedCustomer() {
   if (!state.selectedCustomerId) return showToast("Najpierw zaznacz klienta");
-  if (!confirm("Usunąć klienta?")) return;
+  if (!confirm("Usunąć klienta z aktywnej listy? Historia zamówień zostanie zachowana.")) return;
   await fetchJson(`/api/customers/${state.selectedCustomerId}`, { method: "DELETE" });
   state.selectedCustomerId = null;
+  state.customerRelatedDocs = [];
   elements.customerForm.reset();
   await refreshCrm();
+  renderCustomerRelatedDocs();
   showToast("Klient usunięty");
+}
+
+async function deleteCustomerDocumentByIndex(index) {
+  const doc = state.customerRelatedDocs[index];
+  if (!doc?.can_delete || !doc.delete_url) return showToast("Tego dokumentu nie można usunąć tutaj");
+  if (!confirm(`Usunąć dokument: ${doc.type_label} ${doc.document}?`)) return;
+  await fetchJson(doc.delete_url, { method: "DELETE" });
+  await refreshCrm();
+  await loadCustomerRelatedDocs(state.selectedCustomerId);
+  showToast("Dokument usunięty");
+}
+
+async function deleteCustomerOrderBundleByIndex(index) {
+  const doc = state.customerRelatedDocs[index];
+  if (!doc || doc.type !== "order") return showToast("Zaznacz zamówienie do usunięcia kompletu");
+  if (!confirm(`Usunąć cały komplet zamówienia ${doc.document}: wpłaty, wyceny, formatki i zamówienie?`)) return;
+  const result = await fetchJson(`/api/orders/${doc.id}/full`, { method: "DELETE" });
+  await refreshCrm();
+  await loadCustomerRelatedDocs(state.selectedCustomerId);
+  showToast(`Usunięto komplet: ${result.orders || 0} zamówienie`);
+}
+
+async function deleteSelectedCustomerDocs() {
+  if (!state.selectedCustomerId) return showToast("Najpierw zaznacz klienta");
+  const checked = Array.from(elements.customerDocsBody?.querySelectorAll("[data-doc-index]:checked") || []);
+  const docs = checked
+    .map((input) => state.customerRelatedDocs[Number(input.dataset.docIndex)])
+    .filter((doc) => doc?.can_delete && doc.delete_url);
+  if (!docs.length) return showToast("Zaznacz dokumenty, które można usunąć");
+  if (!confirm(`Usunąć zaznaczone dokumenty: ${docs.length}?`)) return;
+  for (const doc of docs) {
+    await fetchJson(doc.delete_url, { method: "DELETE" });
+  }
+  await refreshCrm();
+  await loadCustomerRelatedDocs(state.selectedCustomerId);
+  showToast(`Usunięto dokumenty: ${docs.length}`);
+}
+
+async function deleteSelectedCustomerOrderBundle() {
+  if (!state.selectedCustomerId) return showToast("Najpierw zaznacz klienta");
+  const doc = state.customerRelatedDocs[Number(state.selectedCustomerDocIndex)];
+  if (!doc || doc.type !== "order") return showToast("Zaznacz w tabeli wiersz zamówienia");
+  await deleteCustomerOrderBundleByIndex(Number(state.selectedCustomerDocIndex));
 }
 
 async function deleteSelectedOrder() {
   if (!state.selectedOrderId) return showToast("Najpierw zaznacz zamówienie");
   if (!confirm("Usunąć zamówienie?")) return;
   const deletedId = state.selectedOrderId;
-  await fetchJson(`/api/orders/${deletedId}`, { method: "DELETE" });
+  try {
+    await fetchJson(`/api/orders/${deletedId}`, { method: "DELETE" });
+  } catch (error) {
+    if (error.status !== 409) throw error;
+    const blockers = Array.isArray(error.blockers) && error.blockers.length
+      ? `\n\nBlokady:\n${error.blockers.map((blocker) => `- ${blocker.message || blocker.code}`).join("\n")}`
+      : "";
+    const deleteBundle = confirm(`Zamówienie ma powiązane dokumenty i nie można go usunąć pojedynczo.${blockers}\n\nUsunąć cały komplet: wpłaty, wyceny, formatki i zamówienie?`);
+    if (!deleteBundle) return;
+    await fetchJson(`/api/orders/${deletedId}/full`, { method: "DELETE" });
+  }
   if (String(state.selectedOrderId) === String(deletedId)) await resetOrderWorkspace();
   await refreshAll();
   showToast("Zamówienie usunięte");
@@ -2386,10 +2760,8 @@ async function deleteSelectedMaterial() {
   if (!state.selectedId) return showToast("Najpierw zaznacz materiał");
   if (!confirm("Usunąć tę pozycję materiału?")) return;
   await fetchJson(`/api/materials/${state.selectedId}`, { method: "DELETE" });
-  state.selectedId = null;
-  elements.materialForm.reset();
-  elements.materialForm.elements.is_active.checked = true;
   await refreshAll();
+  resetMaterialForm();
   showToast("Pozycja materiału usunięta");
 }
 
@@ -2401,6 +2773,78 @@ async function deleteSelectedOffcut() {
   elements.offcutForm.reset();
   await refreshOffcuts();
   showToast("Resztka usunięta");
+}
+
+async function assignSelectedOffcutStorage() {
+  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkę");
+  const row = await postJson(`/api/offcuts/${encodeURIComponent(state.selectedOffcutId)}/assign-storage`, {});
+  state.selectedOffcutId = row.id;
+  await refreshOffcuts();
+  fillOffcutForm(row.id);
+  showToast(`Miejsce: ${row.storage_location || "brak dopasowania"}`);
+}
+
+async function reserveSelectedOffcut() {
+  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkę");
+  const project = prompt("Do jakiego projektu / rozkroju rezerwujesz tę resztkę?", "") || "";
+  const row = await postJson(`/api/offcuts/${encodeURIComponent(state.selectedOffcutId)}/reserve`, {
+    station: getStationName(),
+    project
+  });
+  state.selectedOffcutId = row.id;
+  await refreshOffcuts();
+  fillOffcutForm(row.id);
+  showToast(`Resztka zarezerwowana dla ${row.reserved_by}`);
+}
+
+async function releaseSelectedOffcut() {
+  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkę");
+  const row = await postJson(`/api/offcuts/${encodeURIComponent(state.selectedOffcutId)}/release`, {});
+  state.selectedOffcutId = row.id;
+  await refreshOffcuts();
+  fillOffcutForm(row.id);
+  showToast("Rezerwacja zwolniona");
+}
+
+async function useSelectedOffcut() {
+  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkę");
+  if (!confirm("Oznaczyć resztkę jako zużytą? Nie będzie już widoczna jako wolna dla GibLab.")) return;
+  const row = await postJson(`/api/offcuts/${encodeURIComponent(state.selectedOffcutId)}/use`, { station: getStationName() });
+  state.selectedOffcutId = row.id;
+  await refreshOffcuts();
+  fillOffcutForm(row.id);
+  showToast("Resztka oznaczona jako zużyta");
+}
+
+function fillOffcutStorageForm(id) {
+  const row = state.offcutStorageLocations.find((item) => Number(item.id) === Number(id));
+  if (!row || !elements.offcutStorageForm) return;
+  state.selectedOffcutStorageLocationId = row.id;
+  for (const field of elements.offcutStorageForm.elements) {
+    if (!field.name) continue;
+    if (field.type === "checkbox") field.checked = Boolean(row[field.name]);
+    else field.value = row[field.name] ?? "";
+  }
+  refreshOffcutStorageLocations();
+}
+
+async function deleteOffcutStorageLocation(id) {
+  if (!confirm("Usunąć regułę regału? Resztki nie znikną, ale po przeliczeniu mogą dostać inne miejsce.")) return;
+  await fetchJson(`/api/offcut-storage-locations/${id}`, { method: "DELETE" });
+  if (Number(state.selectedOffcutStorageLocationId) === Number(id)) {
+    state.selectedOffcutStorageLocationId = null;
+    elements.offcutStorageForm?.reset();
+    if (elements.offcutStorageForm?.elements.active) elements.offcutStorageForm.elements.active.checked = true;
+  }
+  await refreshOffcutStorageLocations();
+  showToast("Reguła regału usunięta");
+}
+
+async function reassignAllOffcutStorage() {
+  if (!confirm("Przeliczyć miejsce dla wszystkich dostępnych resztek według aktualnych regałów?")) return;
+  const result = await postJson("/api/offcuts/reassign-storage", {});
+  await refreshOffcuts();
+  showToast(`Przeliczono resztki: ${result.updated}`);
 }
 
 function fillSupplyForm(id) {
@@ -2755,7 +3199,11 @@ async function fetchJson(url, options = {}) {
     const blockerText = Array.isArray(error.blockers) && error.blockers.length
       ? ` ${error.blockers.map((blocker) => blocker.message).join(" ")}`
       : "";
-    throw new Error(`${error.error || response.statusText}${blockerText}`.trim());
+    const exception = new Error(`${error.error || response.statusText}${blockerText}`.trim());
+    exception.status = response.status;
+    exception.payload = error;
+    exception.blockers = error.blockers || [];
+    throw exception;
   }
   if (response.status === 204) return null;
   return response.json();

@@ -129,9 +129,15 @@ input, select, textarea {
   border: 1px solid var(--line-strong);
   border-radius: 4px;
   padding: 4px 8px;
-  background-color: var(--bg);
+  background-color: #101827;
+  color: #ffffff;
   min-height: 26px;
   transition: border-color 0.2s;
+}
+
+input::placeholder, textarea::placeholder {
+  color: #cbd5e1;
+  opacity: 1;
 }
 
 input:hover, select:hover, textarea:hover {
@@ -432,6 +438,44 @@ input[type="checkbox"] {
 .stock-form { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
 .order-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
 
+.material-filters {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(150px, 1fr)) auto;
+  margin: 0 0 12px;
+  align-items: center;
+}
+
+.material-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 300px;
+}
+
+.material-indent {
+  flex: 0 0 auto;
+}
+
+.material-folder-toggle,
+.material-folder-spacer {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+}
+
+.material-folder-toggle {
+  padding: 0;
+  border-radius: 3px;
+  line-height: 20px;
+  font-weight: 800;
+}
+
+.material-folder-spacer::before {
+  content: "•";
+  color: var(--muted);
+}
+
 .split-grid {
   display: grid;
   gap: 12px;
@@ -523,11 +567,12 @@ th, td {
   border-bottom: 1px solid var(--line);
   padding: 6px 10px;
   vertical-align: middle;
+  color: #ffffff;
 }
 
 th {
   background-color: var(--bg);
-  color: var(--text-muted);
+  color: #cbd5e1;
   position: sticky;
   top: 0;
   font-weight: 600;
@@ -542,7 +587,7 @@ th {
 tr.folder-row {
   background-color: var(--bg);
   font-weight: 700;
-  color: var(--blue);
+  color: var(--blue-hover);
 }
 
 tr.material-row:hover, tbody tr:hover {

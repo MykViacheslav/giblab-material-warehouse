@@ -142,6 +142,28 @@
               <tbody id="customersBody"></tbody>
             </table>
           </div>
+          <div class="selection-actions">
+            <button id="deleteSelectedCustomerDocsBtn" class="outline-action danger-outline" type="button">USUŃ ZAZNACZONE MOŻLIWE</button>
+            <button id="deleteSelectedCustomerOrderBundleBtn" class="outline-action danger-outline" type="button">USUŃ KOMPLET ZAMÓWIENIA</button>
+            <span id="customerDocsStatus" class="hint"></span>
+          </div>
+          <div class="table-wrap compact-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Wybierz</th>
+                  <th>Typ</th>
+                  <th>Dokument</th>
+                  <th>Powiązanie</th>
+                  <th>Wartość</th>
+                  <th>Można usunąć</th>
+                  <th>Blokady</th>
+                  <th>Akcje</th>
+                </tr>
+              </thead>
+              <tbody id="customerDocsBody"></tbody>
+            </table>
+          </div>
         </section>
 
         <section id="ordersTab" class="tab-page">
@@ -493,8 +515,8 @@
 
         <section id="materialsTab" class="tab-page active">
           <form id="materialForm" class="grid-form">
-            <input name="id" placeholder="ID">
-            <input name="paren_id" placeholder="paren_id">
+            <input name="id" placeholder="ID auto" readonly>
+            <input name="paren_id" placeholder="Folder nadrzędny ID">
             <label class="check"><input name="isfolder" type="checkbox"> Folder</label>
             <input name="code" placeholder="Kod">
             <input name="name" placeholder="Nazwa" required>
@@ -526,7 +548,21 @@
             <input name="width" placeholder="Szerokość">
             <button type="submit">Zapisz pozycję</button>
             <button id="clearFormBtn" type="button">Wyczyść</button>
+            <button id="newMaterialFolderBtn" type="button">Nowy folder</button>
           </form>
+          <div class="material-filters">
+            <input id="materialSearchFilter" placeholder="Szukaj po kodzie, nazwie, dekorze">
+            <select id="materialProducerFilter">
+              <option value="">Producent: wszyscy</option>
+            </select>
+            <select id="materialThicknessFilter">
+              <option value="">Grubość: wszystkie</option>
+            </select>
+            <select id="materialTypeFilter">
+              <option value="">Typ: wszystkie</option>
+            </select>
+            <button id="clearMaterialFiltersBtn" type="button">Wyczyść filtry</button>
+          </div>
           <div class="selection-actions">
             <button id="editSelectedMaterialBtn" class="outline-action" type="button">EDYTUJ</button>
             <button id="deleteSelectedMaterialBtn" class="outline-action danger-outline" type="button">USUŃ</button>
@@ -584,10 +620,8 @@
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th>Parent</th>
-                  <th>Folder</th>
+                  <th>Nazwa / folder</th>
                   <th>Kod</th>
-                  <th>Nazwa</th>
                   <th>Producent</th>
                   <th>Dekor</th>
                   <th>Str.</th>
@@ -803,6 +837,10 @@
             <span id="remainderStatus" class="hint"></span>
           </div>
           <p class="hint">Adres dla GibLab do resztek: <code id="remaindersUrlText">http://127.0.0.1:3080/giblab/remainders</code>. W GibLab ten adres musi być wpisany z http:// na początku.</p>
+          <div class="toolbar-row">
+            <input id="offcutStationName" placeholder="Nazwa stanowiska, np. DESKTOP-MQBAC93">
+            <span class="hint">Ta nazwa służy do rezerwacji resztek między komputerami.</span>
+          </div>
           <form id="offcutForm" class="stock-form">
             <input name="id" placeholder="ID resztki">
             <input name="material_id" placeholder="ID materiału">
@@ -811,12 +849,50 @@
             <input name="width" placeholder="Szerokość" required>
             <input name="quantity" placeholder="Ilość">
             <input name="project_name" placeholder="Projekt">
+            <input name="storage_location" placeholder="Miejsce / regał">
+            <input name="storage_note" placeholder="Uwagi do miejsca">
             <label class="check"><input name="is_business" type="checkbox"> Delowa</label>
             <button type="submit">Dodaj resztkę</button>
           </form>
           <div class="selection-actions">
+            <button id="assignSelectedOffcutStorageBtn" class="outline-action" type="button">WYZNACZ MIEJSCE</button>
+            <button id="reserveSelectedOffcutBtn" class="outline-action" type="button">REZERWUJ</button>
+            <button id="releaseSelectedOffcutBtn" class="outline-action" type="button">ZWOLNIJ</button>
+            <button id="useSelectedOffcutBtn" class="outline-action" type="button">ZUŻYTO</button>
             <button id="editSelectedOffcutBtn" class="outline-action" type="button">EDYTUJ</button>
             <button id="deleteSelectedOffcutBtn" class="outline-action danger-outline" type="button">USUŃ</button>
+          </div>
+          <h3>Reguły regałów</h3>
+          <form id="offcutStorageForm" class="stock-form">
+            <input name="id" placeholder="ID" readonly>
+            <input name="code" placeholder="Kod regału, np. A1" required>
+            <input name="name" placeholder="Nazwa regału">
+            <input name="min_long_side" placeholder="Min. długi bok">
+            <input name="max_long_side" placeholder="Max. długi bok">
+            <input name="min_short_side" placeholder="Min. krótki bok">
+            <input name="max_short_side" placeholder="Max. krótki bok">
+            <input name="sort_order" placeholder="Kolejność">
+            <label class="check"><input name="active" type="checkbox" checked> Aktywny</label>
+            <button type="submit">Zapisz regał</button>
+            <button id="clearOffcutStorageBtn" type="button">Wyczyść</button>
+            <button id="reassignOffcutStorageBtn" type="button">Przelicz wszystkie resztki</button>
+          </form>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Kod</th>
+                  <th>Nazwa</th>
+                  <th>Długi bok</th>
+                  <th>Krótki bok</th>
+                  <th>Kolejność</th>
+                  <th>Aktywny</th>
+                  <th>Akcje</th>
+                </tr>
+              </thead>
+              <tbody id="offcutStorageBody"></tbody>
+            </table>
           </div>
           <div class="table-wrap">
             <table>
@@ -829,7 +905,10 @@
                   <th>Ilość</th>
                   <th>Typ</th>
                   <th>Projekt</th>
+                  <th>Miejsce</th>
                   <th>Status</th>
+                  <th>Rezerwacja</th>
+                  <th>Stacja</th>
                 </tr>
               </thead>
               <tbody id="offcutsBody"></tbody>
