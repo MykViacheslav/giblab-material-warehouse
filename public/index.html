@@ -397,38 +397,9 @@
             <span id="cutTextImportStatus" class="hint"></span>
           </div>
 
-          <form id="cutPartForm" class="stock-form cutting-part-form">
-            <input id="cutMaterialSearch" class="cut-material-search" placeholder="Szukaj płyty">
-            <select id="cutProducerFilter" class="cut-filter-select"></select>
-            <select id="cutThicknessFilter" class="cut-filter-select"></select>
-            <select name="material_id" class="cut-material-select"></select>
-            <input name="material_code" class="cut-code-field" placeholder="Kod płyty" readonly>
-            <input name="material_name" class="cut-material-name" placeholder="Płyta">
-
-            <input id="cutEdgeMaterialSearch" class="cut-material-search" placeholder="Szukaj okleiny">
-            <select name="edge_material_id" class="cut-material-select"></select>
-            <input name="edge_material_code" class="cut-code-field" placeholder="Kod okleiny" readonly>
-            <input name="edge_material_name" class="cut-material-name" placeholder="Okleina">
-
-            <input name="thickness" class="cut-short" placeholder="G" readonly>
-            <input name="length" class="cut-number" placeholder="Dł." required>
-            <input name="width" class="cut-number" placeholder="Szer." required>
-            <input name="quantity" class="cut-qty" placeholder="Ilość" value="1">
-            <label class="texture-check"><input name="texture" type="checkbox" value="1" checked> Tekstura</label>
-            <input name="name" class="cut-name-field" placeholder="Nazwa elementu">
-            <div class="edge-checks">
-              <label><input id="edgeAll" type="checkbox"> Oklej wszystko</label>
-              <label><input name="edge_top" type="checkbox" value="1"> OB góra</label>
-              <label><input name="edge_bottom" type="checkbox" value="1"> OH dół</label>
-              <label><input name="edge_left" type="checkbox" value="1"> OL lewa</label>
-              <label><input name="edge_right" type="checkbox" value="1"> OP prawa</label>
-            </div>
-            <input name="description" class="cut-description" placeholder="Opis">
-            <button type="submit">Dodaj formatkę</button>
-          </form>
-
           <div class="split-tables">
             <div class="table-wrap quote-table">
+              <div class="cut-table-title">Pozycje zamówienia</div>
               <table>
                 <thead>
                   <tr>
@@ -447,7 +418,39 @@
                 <tbody id="cutJobsBody"></tbody>
               </table>
             </div>
+            <section class="cut-part-entry-panel cut-part-hidden-source" aria-hidden="true">
+              <form id="cutPartForm" class="stock-form cutting-part-form">
+                <input id="cutMaterialSearch" class="cut-material-search" placeholder="Szukaj płyty">
+                <select id="cutProducerFilter" class="cut-filter-select"></select>
+                <select id="cutThicknessFilter" class="cut-filter-select"></select>
+                <select name="material_id" class="cut-material-select"></select>
+                <input name="material_code" class="cut-code-field" placeholder="Kod płyty" readonly>
+                <input name="material_name" class="cut-material-name" placeholder="Płyta">
+
+                <input id="cutEdgeMaterialSearch" class="cut-material-search" placeholder="Szukaj okleiny">
+                <select name="edge_material_id" class="cut-material-select"></select>
+                <input name="edge_material_code" class="cut-code-field" placeholder="Kod okleiny" readonly>
+                <input name="edge_material_name" class="cut-material-name" placeholder="Okleina">
+
+                <input name="thickness" class="cut-short" placeholder="G" readonly>
+                <input name="length" class="cut-number" placeholder="Dł." required>
+                <input name="width" class="cut-number" placeholder="Szer." required>
+                <input name="quantity" class="cut-qty" placeholder="Ilość" value="1">
+                <label class="texture-check"><input name="texture" type="checkbox" value="1" checked> Tekstura</label>
+                <input name="name" class="cut-name-field" placeholder="Nazwa elementu">
+                <div class="edge-checks">
+                  <label><input id="edgeAll" type="checkbox"> Oklej wszystko</label>
+                  <label><input name="edge_top" type="checkbox" value="1"> OB góra</label>
+                  <label><input name="edge_bottom" type="checkbox" value="1"> OH dół</label>
+                  <label><input name="edge_left" type="checkbox" value="1"> OL lewa</label>
+                  <label><input name="edge_right" type="checkbox" value="1"> OP prawa</label>
+                </div>
+                <input name="description" class="cut-description" placeholder="Opis">
+                <button type="submit">Dodaj formatkę</button>
+              </form>
+            </section>
             <div class="table-wrap quote-table">
+              <div class="cut-table-title">Formatki w wybranej pozycji</div>
               <table>
                 <thead>
                   <tr>

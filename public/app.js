@@ -27,6 +27,7 @@
   selectedOffcutStorageLocationId: null,
   selectedCustomerDocIndex: null,
   selectedCutJobId: null,
+  highlightedCutPartId: null,
   selectedDeliveryId: null,
   selectedDeliveryCorrectionId: null,
   activeDashboardPanel: "today",
@@ -484,11 +485,12 @@ elements.cutPartForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!state.selectedCutJobId) return showToast("Najpierw wybierz albo zapisz zlecenie formatek");
   const selectedMaterialId = elements.cutPartForm.elements.material_id.value || elements.cutJobForm.elements.material_id.value;
-  await postJson(`/api/cut-jobs/${state.selectedCutJobId}/parts`, formPayload(elements.cutPartForm));
+  const saved = await postJson(`/api/cut-jobs/${state.selectedCutJobId}/parts`, formPayload(elements.cutPartForm));
+  state.highlightedCutPartId = saved.id;
   prepareNextCutPartRow(selectedMaterialId);
   await loadCutParts(state.selectedCutJobId);
   await refreshCutting();
-  showToast("Formatka dodana");
+  showToast(`Formatka dodana do pozycji: ${currentCutJobLabel()}`);
 });
 
 elements.cutPartForm.addEventListener("keydown", (event) => {
@@ -2146,7 +2148,7 @@ function renderMaterialChips(material) {
 
 function renderCutParts() {
   elements.cutPartsBody.innerHTML = state.cutParts.map((row, index) => `
-    <tr>
+    <tr class="${Number(row.id) === Number(state.highlightedCutPartId) ? "cut-part-highlight" : ""}" data-cut-part-id="${row.id}">
       <td>${index + 1}</td>
       <td><input class="cut-table-input cut-table-number" data-cut-id="${row.id}" data-cut-field="length" value="${escapeHtml(formatDecimalInput(row.length))}"></td>
       <td><input class="cut-table-input cut-table-number" data-cut-id="${row.id}" data-cut-field="width" value="${escapeHtml(formatDecimalInput(row.width))}"></td>
@@ -2178,6 +2180,18 @@ function renderCutParts() {
       if (saved) focusCutDraftStart();
     });
   });
+  revealHighlightedCutPart();
+}
+
+function revealHighlightedCutPart() {
+  if (!state.highlightedCutPartId) return;
+  const row = elements.cutPartsBody.querySelector(`[data-cut-part-id="${state.highlightedCutPartId}"]`);
+  row?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  setTimeout(() => {
+    if (Number(state.highlightedCutPartId) === Number(row?.dataset.cutPartId)) {
+      state.highlightedCutPartId = null;
+    }
+  }, 1800);
 }
 
 function renderCutPartDraftRow() {
@@ -2243,11 +2257,17 @@ async function saveDraftCutPart(row) {
     showToast("Podaj D, S i ilość");
     return false;
   }
-  await postJson(`/api/cut-jobs/${state.selectedCutJobId}/parts`, payload);
+  const saved = await postJson(`/api/cut-jobs/${state.selectedCutJobId}/parts`, payload);
+  state.highlightedCutPartId = saved.id;
   await loadCutParts(state.selectedCutJobId);
   await refreshCutting();
-  showToast("Formatka dodana");
+  showToast(`Formatka dodana do pozycji: ${currentCutJobLabel()}`);
   return true;
+}
+
+function currentCutJobLabel() {
+  const job = state.cutJobs.find((item) => Number(item.id) === Number(state.selectedCutJobId));
+  return job?.name || elements.cutJobForm.elements.name.value || `ID ${state.selectedCutJobId}`;
 }
 
 function cutPartPayloadFromTableRow(row) {
