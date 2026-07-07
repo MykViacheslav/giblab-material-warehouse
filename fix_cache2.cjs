@@ -1,0 +1,10 @@
+const fs = require('fs');
+let t = fs.readFileSync('public/index.html', 'utf8');
+const v = Date.now();
+t = t.replace(/src="js\/dom\.js[^"]*"/g, 'src="js/dom.js?v=' + v + '"');
+t = t.replace(/src="js\/state\.js[^"]*"/g, 'src="js/state.js?v=' + v + '"');
+t = t.replace(/src="js\/cutTextParser\.js[^"]*"/g, 'src="js/cutTextParser.js?v=' + v + '"');
+t = t.replace(/src="app\.js[^"]*"/g, 'src="app.js?v=' + v + '"');
+t = t.replace(/href="styles\.css[^"]*"/g, 'href="styles.css?v=' + v + '"');
+fs.writeFileSync('public/index.html', t, 'utf8');
+console.log('Added cache busters to index.html');

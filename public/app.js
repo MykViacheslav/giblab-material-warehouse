@@ -1,179 +1,36 @@
-﻿const state = {
-  flat: [],
-  tree: [],
-  customers: [],
-  orders: [],
-  priceItems: [],
-  supplies: [],
-  quoteLines: [],
-  cutJobs: [],
-  cutParts: [],
-  cutQuoteLines: [],
-  deliveries: [],
-  deliveryLines: [],
-  deliveryCorrections: [],
-  deliveryCorrectionLines: [],
-  purchaseNeeds: { rows: [], summary: null },
-  backups: [],
-  materialImportRows: [],
-  offcutStorageLocations: [],
-  customerRelatedDocs: [],
-  selectedId: null,
-  selectedCustomerId: null,
-  selectedOrderId: null,
-  selectedPriceItemId: null,
-  selectedSupplyId: null,
-  selectedOffcutId: null,
-  selectedOffcutStorageLocationId: null,
-  selectedCustomerDocIndex: null,
-  selectedCutJobId: null,
-  selectedDeliveryId: null,
-  selectedDeliveryCorrectionId: null,
-  activeDashboardPanel: "today",
-  collapsed: new Set(),
-  materialCollapsed: new Set()
-};
-
-const elements = {
-  layout: document.querySelector(".layout"),
-  tree: document.querySelector("#tree"),
-  hideTreeBtn: document.querySelector("#hideTreeBtn"),
-  showTreeBtn: document.querySelector("#showTreeBtn"),
-  materialsBody: document.querySelector("#materialsBody"),
-  stockBody: document.querySelector("#stockBody"),
-  stockHistoryPanel: document.querySelector("#stockHistoryPanel"),
-  offcutsBody: document.querySelector("#offcutsBody"),
-  customersBody: document.querySelector("#customersBody"),
-  customerDocsBody: document.querySelector("#customerDocsBody"),
-  customerDocsStatus: document.querySelector("#customerDocsStatus"),
-  ordersBody: document.querySelector("#ordersBody"),
-  dashboardCards: document.querySelector("#dashboardCards"),
-  dashboardTodayBody: document.querySelector("#dashboardTodayBody"),
-  dashboardStockBody: document.querySelector("#dashboardStockBody"),
-  dashboardPaymentsBody: document.querySelector("#dashboardPaymentsBody"),
-  calendarBody: document.querySelector("#calendarBody"),
-  calendarSummary: document.querySelector("#calendarSummary"),
-  materialForm: document.querySelector("#materialForm"),
-  materialSearchFilter: document.querySelector("#materialSearchFilter"),
-  materialProducerFilter: document.querySelector("#materialProducerFilter"),
-  materialThicknessFilter: document.querySelector("#materialThicknessFilter"),
-  materialTypeFilter: document.querySelector("#materialTypeFilter"),
-  clearMaterialFiltersBtn: document.querySelector("#clearMaterialFiltersBtn"),
-  newMaterialFolderBtn: document.querySelector("#newMaterialFolderBtn"),
-  materialImportFile: document.querySelector("#materialImportFile"),
-  materialImportMode: document.querySelector("#materialImportMode"),
-  materialImportFilter: document.querySelector("#materialImportFilter"),
-  materialImportPreviewBtn: document.querySelector("#materialImportPreviewBtn"),
-  materialImportCommitBtn: document.querySelector("#materialImportCommitBtn"),
-  materialImportSelectValidBtn: document.querySelector("#materialImportSelectValidBtn"),
-  materialImportClearSelectionBtn: document.querySelector("#materialImportClearSelectionBtn"),
-  materialImportSummary: document.querySelector("#materialImportSummary"),
-  materialImportPreviewBody: document.querySelector("#materialImportPreviewBody"),
-  stockForm: document.querySelector("#stockForm"),
-  deliveryForm: document.querySelector("#deliveryForm"),
-  deliveryLineForm: document.querySelector("#deliveryLineForm"),
-  deliveriesBody: document.querySelector("#deliveriesBody"),
-  deliveryLinesBody: document.querySelector("#deliveryLinesBody"),
-  deliveryStatus: document.querySelector("#deliveryStatus"),
-  newDeliveryBtn: document.querySelector("#newDeliveryBtn"),
-  postDeliveryBtn: document.querySelector("#postDeliveryBtn"),
-  deliveryCorrectionForm: document.querySelector("#deliveryCorrectionForm"),
-  deliveryCorrectionLineForm: document.querySelector("#deliveryCorrectionLineForm"),
-  deliveryCorrectionsBody: document.querySelector("#deliveryCorrectionsBody"),
-  deliveryCorrectionLinesBody: document.querySelector("#deliveryCorrectionLinesBody"),
-  deliveryCorrectionStatus: document.querySelector("#deliveryCorrectionStatus"),
-  newDeliveryCorrectionBtn: document.querySelector("#newDeliveryCorrectionBtn"),
-  postDeliveryCorrectionBtn: document.querySelector("#postDeliveryCorrectionBtn"),
-  purchaseNeedsBody: document.querySelector("#purchaseNeedsBody"),
-  purchaseNeedsSummary: document.querySelector("#purchaseNeedsSummary"),
-  purchaseSearch: document.querySelector("#purchaseSearch"),
-  purchaseSupplierFilter: document.querySelector("#purchaseSupplierFilter"),
-  purchaseProducerFilter: document.querySelector("#purchaseProducerFilter"),
-  purchaseTypeFilter: document.querySelector("#purchaseTypeFilter"),
-  refreshPurchaseNeedsBtn: document.querySelector("#refreshPurchaseNeedsBtn"),
-  exportPurchaseNeedsCsvBtn: document.querySelector("#exportPurchaseNeedsCsvBtn"),
-  sendPurchaseNeedsTelegramBtn: document.querySelector("#sendPurchaseNeedsTelegramBtn"),
-  createBackupBtn: document.querySelector("#createBackupBtn"),
-  refreshBackupsBtn: document.querySelector("#refreshBackupsBtn"),
-  backupsBody: document.querySelector("#backupsBody"),
-  backupStatus: document.querySelector("#backupStatus"),
-  offcutForm: document.querySelector("#offcutForm"),
-  offcutStorageForm: document.querySelector("#offcutStorageForm"),
-  offcutStorageBody: document.querySelector("#offcutStorageBody"),
-  clearOffcutStorageBtn: document.querySelector("#clearOffcutStorageBtn"),
-  reassignOffcutStorageBtn: document.querySelector("#reassignOffcutStorageBtn"),
-  supplyForm: document.querySelector("#supplyForm"),
-  suppliesBody: document.querySelector("#suppliesBody"),
-  clearSupplyBtn: document.querySelector("#clearSupplyBtn"),
-  customerForm: document.querySelector("#customerForm"),
-  editSelectedCustomerBtn: document.querySelector("#editSelectedCustomerBtn"),
-  deleteSelectedCustomerBtn: document.querySelector("#deleteSelectedCustomerBtn"),
-  deleteSelectedCustomerDocsBtn: document.querySelector("#deleteSelectedCustomerDocsBtn"),
-  deleteSelectedCustomerOrderBundleBtn: document.querySelector("#deleteSelectedCustomerOrderBundleBtn"),
-  orderForm: document.querySelector("#orderForm"),
-  editSelectedOrderBtn: document.querySelector("#editSelectedOrderBtn"),
-  deleteSelectedOrderBtn: document.querySelector("#deleteSelectedOrderBtn"),
-  paymentForm: document.querySelector("#paymentForm"),
-  priceItemForm: document.querySelector("#priceItemForm"),
-  clearPriceItemBtn: document.querySelector("#clearPriceItemBtn"),
-  editSelectedPriceBtn: document.querySelector("#editSelectedPriceBtn"),
-  deleteSelectedPriceBtn: document.querySelector("#deleteSelectedPriceBtn"),
-  quoteLineForm: document.querySelector("#quoteLineForm"),
-  priceItemsBody: document.querySelector("#priceItemsBody"),
-  quoteLinesBody: document.querySelector("#quoteLinesBody"),
-  quoteSummary: document.querySelector("#quoteSummary"),
-  cutJobForm: document.querySelector("#cutJobForm"),
-  cutPartForm: document.querySelector("#cutPartForm"),
-  cutQuoteForm: document.querySelector("#cutQuoteForm"),
-  cutJobsBody: document.querySelector("#cutJobsBody"),
-  cutPartsBody: document.querySelector("#cutPartsBody"),
-  cutQuoteLinesBody: document.querySelector("#cutQuoteLinesBody"),
-  cutStatus: document.querySelector("#cutStatus"),
-  cutTotals: document.querySelector("#cutTotals"),
-  cutMaterialChips: document.querySelector("#cutMaterialChips"),
-  cutMaterialSearch: document.querySelector("#cutMaterialSearch"),
-  cutEdgeMaterialSearch: document.querySelector("#cutEdgeMaterialSearch"),
-  cutPhotoFile: document.querySelector("#cutPhotoFile"),
-  cutTextImport: document.querySelector("#cutTextImport"),
-  cutTextImportStatus: document.querySelector("#cutTextImportStatus"),
-  cutTextImportToggleBtn: document.querySelector("#cutTextImportToggleBtn"),
-  cutTextImportPanel: document.querySelector("#cutTextImportPanel"),
-  importExportedProjectBtn: document.querySelector("#importExportedProjectBtn"),
-  cutProducerFilter: document.querySelector("#cutProducerFilter"),
-  cutThicknessFilter: document.querySelector("#cutThicknessFilter"),
-  calcLength: document.querySelector("#calcLength"),
-  calcWidth: document.querySelector("#calcWidth"),
-  calcCount: document.querySelector("#calcCount"),
-  notifyText: document.querySelector("#notifyText"),
-  newOrderBtn: document.querySelector("#newOrderBtn"),
-  addOrderPositionBtn: document.querySelector("#addOrderPositionBtn"),
-  goToOrderCuttingBtn: document.querySelector("#goToOrderCuttingBtn"),
-  newCutJobBtn: document.querySelector("#newCutJobBtn"),
-  deleteCutJobBtn: document.querySelector("#deleteCutJobBtn"),
-  editSelectedMaterialBtn: document.querySelector("#editSelectedMaterialBtn"),
-  deleteSelectedMaterialBtn: document.querySelector("#deleteSelectedMaterialBtn"),
-  assignSelectedOffcutStorageBtn: document.querySelector("#assignSelectedOffcutStorageBtn"),
-  reserveSelectedOffcutBtn: document.querySelector("#reserveSelectedOffcutBtn"),
-  releaseSelectedOffcutBtn: document.querySelector("#releaseSelectedOffcutBtn"),
-  useSelectedOffcutBtn: document.querySelector("#useSelectedOffcutBtn"),
-  editSelectedOffcutBtn: document.querySelector("#editSelectedOffcutBtn"),
-  deleteSelectedOffcutBtn: document.querySelector("#deleteSelectedOffcutBtn"),
-  openCutExportFolderBtn: document.querySelector("#openCutExportFolderBtn"),
-  payerCustomerSelect: document.querySelector("#payerCustomerSelect"),
-  remainderStatus: document.querySelector("#remainderStatus"),
-  remainderLogs: document.querySelector("#remainderLogs"),
-  remaindersUrlText: document.querySelector("#remaindersUrlText"),
-  copyRemaindersUrlBtn: document.querySelector("#copyRemaindersUrlBtn"),
-  offcutStationName: document.querySelector("#offcutStationName"),
-  toast: document.querySelector("#toast")
-};
+﻿import { state } from "./js/state.js";
+import { elements } from "./js/dom.js";
+import { parseCutTextRows } from "./js/cutTextParser.js";
 
 const treeHiddenSetting = localStorage.getItem("giblabTreeHidden") === "1";
 setTreeHidden(treeHiddenSetting);
 initializeStationName();
 
+elements.globalCutOrderSelect = document.querySelector("#globalCutOrderSelect");
+elements.cuttingPositionsPanel = document.querySelector("#cuttingPositionsPanel");
+
+if (elements.globalCutOrderSelect) {
+  elements.globalCutOrderSelect.addEventListener("change", (e) => {
+    state.selectedOrderId = Number(e.target.value) || null;
+    state.selectedCutJobId = null;
+    state.cutParts = [];
+    state.cutQuoteLines = [];
+    if (elements.cutJobForm) elements.cutJobForm.reset();
+    renderCutJobs();
+    renderCutParts();
+    renderCutQuoteLines();
+
+    if (state.selectedOrderId) {
+      elements.cuttingPositionsPanel.style.display = "block";
+    } else {
+      elements.cuttingPositionsPanel.style.display = "none";
+    }
+  });
+}
+
+
 window.addEventListener("unhandledrejection", (event) => {
-  const message = event.reason?.message || "Operacja nie powiodła się";
+  const message = event.reason?.message || "Operacja nie powiodÄąâ€ša siĂ„â„˘";
   showToast(message);
 });
 
@@ -217,7 +74,7 @@ function setCutTextImportPanel(open) {
   elements.cutTextImportPanel.classList.toggle("open", Boolean(open));
   if (elements.cutTextImportToggleBtn) {
     elements.cutTextImportToggleBtn.classList.toggle("active", Boolean(open));
-    elements.cutTextImportToggleBtn.textContent = open ? "Ukryj import tekst / zdjęcie" : "Import tekst / zdjęcie";
+    elements.cutTextImportToggleBtn.textContent = open ? "Ukryj import tekst / zdjĂ„â„˘cie" : "Import tekst / zdjĂ„â„˘cie";
   }
   if (open) {
     setTimeout(() => elements.cutTextImport?.focus?.(), 0);
@@ -225,7 +82,7 @@ function setCutTextImportPanel(open) {
 }
 
 async function importExportedProjectResult() {
-  const orderId = Number(elements.cutJobForm.elements.order_id.value || state.selectedOrderId || 0);
+  const orderId = Number(elements.globalCutOrderSelect?.value || state.selectedOrderId || 0);
   const jobId = Number(state.selectedCutJobId || 0);
   if (!orderId && !jobId) return showToast("Najpierw wybierz zamówienie albo pozycję formatek");
   const url = orderId ? `/api/orders/${orderId}/import-exported-project` : `/api/cut-jobs/${jobId}/import-exported-project`;
@@ -239,15 +96,15 @@ async function importExportedProjectResult() {
   const board = result.totalBoardSheets ? `${formatNumber(result.totalBoardSheets)} ark.` : "0 ark.";
   const boardM2 = result.totalBoardM2 ? `${formatNumber(result.totalBoardM2)} m2` : "0 m2";
   const edge = result.totalEdgeMeters ? `${formatNumber(result.totalEdgeMeters)} mb` : "0 mb";
-  elements.cutStatus.textContent = `Odebrano wynik GibLab z pliku: ${result.path}. Do wyceny: płyta ${board} / ${boardM2}, okleina ${edge}.`;
+  elements.cutStatus.textContent = `Odebrano wynik GibLab z pliku: ${result.path}. Do wyceny: pÄąâ€šyta ${board} / ${boardM2}, okleina ${edge}.`;
   showToast("Wynik GibLab pobrany do wyceny");
 }
 
 elements.hideTreeBtn.addEventListener("click", () => setTreeHidden(true));
 elements.showTreeBtn.addEventListener("click", () => setTreeHidden(false));
 elements.stockForm.elements.event_type.value = "receive";
-elements.stockForm.elements.event_type.querySelector('[value="use_reserved"]').textContent = "Zużycie rezerwacji";
-document.querySelectorAll("#stockTab th")[5].textContent = "Dostępne";
+elements.stockForm.elements.event_type.querySelector('[value="use_reserved"]').textContent = "ZuÄąÄ˝ycie rezerwacji";
+document.querySelectorAll("#stockTab th")[5].textContent = "DostĂ„â„˘pne";
 
 document.querySelector("#importDefaultBtn").addEventListener("click", async () => {
   const result = await postJson("/api/import/goods", {});
@@ -278,7 +135,7 @@ document.querySelector("#exportGiblabBtn").addEventListener("click", async () =>
 document.querySelector("#polishCatalogBtn").addEventListener("click", async () => {
   const result = await postJson("/api/tools/polish-catalog", {});
   await refreshAll();
-  showToast(`Spolszczono ${result.changedNames} nazw i ${result.changedCodes} kodów`);
+  showToast(`Spolszczono ${result.changedNames} nazw i ${result.changedCodes} kodÄ‚Ĺ‚w`);
 });
 
 document.querySelector("#clearFormBtn").addEventListener("click", () => {
@@ -298,7 +155,7 @@ elements.newMaterialFolderBtn?.addEventListener("click", () => {
   elements.materialForm.elements.isfolder.checked = true;
   if (parent) elements.materialForm.elements.paren_id.value = String(parent);
   elements.materialForm.elements.name.focus();
-  showToast(parent ? `Nowy folder w folderze ID ${parent}` : "Nowy folder główny");
+  showToast(parent ? `Nowy folder w folderze ID ${parent}` : "Nowy folder gÄąâ€šÄ‚Ĺ‚wny");
 });
 
 [elements.materialSearchFilter, elements.materialProducerFilter, elements.materialThicknessFilter, elements.materialTypeFilter]
@@ -324,8 +181,8 @@ document.querySelector("#clearCustomerBtn").addEventListener("click", () => {
 });
 
 document.querySelector("#clearOrderBtn").addEventListener("click", resetOrderWorkspace);
-elements.newOrderBtn.addEventListener("click", resetOrderWorkspace);
-elements.addOrderPositionBtn.addEventListener("click", openCutPositionForSelectedOrder);
+// elements.newOrderBtn.addEventListener("click", resetOrderWorkspace);
+// elements.addOrderPositionBtn.addEventListener("click", openCutPositionForSelectedOrder);
 elements.goToOrderCuttingBtn?.addEventListener("click", openSelectedOrderCutting);
 
 elements.editSelectedCustomerBtn?.addEventListener("click", () => {
@@ -377,7 +234,7 @@ elements.paymentForm.addEventListener("submit", async (event) => {
   elements.paymentForm.reset();
   setDefaultPaymentDate();
   await refreshCrm();
-  showToast("Wpłata dodana");
+  showToast("WpÄąâ€šata dodana");
 });
 
 elements.priceItemForm.addEventListener("submit", async (event) => {
@@ -439,7 +296,7 @@ document.querySelector("#calcAreaBtn").addEventListener("click", () => {
   const length = parseDecimal(elements.calcLength.value);
   const width = parseDecimal(elements.calcWidth.value);
   const count = parseDecimal(elements.calcCount.value || "1");
-  if (!length || !width || !count) return showToast("Podaj długość, szerokość i ilość");
+  if (!length || !width || !count) return showToast("Podaj dÄąâ€šugoÄąâ€şĂ„â€ˇ, szerokoÄąâ€şĂ„â€ˇ i iloÄąâ€şĂ„â€ˇ");
   elements.quoteLineForm.elements.quantity.value = formatDecimalInput((length * width * count) / 1000000);
   elements.quoteLineForm.elements.unit.value = "m2";
 });
@@ -447,7 +304,7 @@ document.querySelector("#calcAreaBtn").addEventListener("click", () => {
 document.querySelector("#calcLinearBtn").addEventListener("click", () => {
   const length = parseDecimal(elements.calcLength.value);
   const count = parseDecimal(elements.calcCount.value || "1");
-  if (!length || !count) return showToast("Podaj długość i ilość");
+  if (!length || !count) return showToast("Podaj dÄąâ€šugoÄąâ€şĂ„â€ˇ i iloÄąâ€şĂ„â€ˇ");
   elements.quoteLineForm.elements.quantity.value = formatDecimalInput((length * count) / 1000);
   elements.quoteLineForm.elements.unit.value = "mb";
 });
@@ -455,6 +312,7 @@ document.querySelector("#calcLinearBtn").addEventListener("click", () => {
 elements.cutJobForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const payload = formPayload(elements.cutJobForm);
+  payload.order_id = state.selectedOrderId;
   const wasNew = !state.selectedCutJobId;
   const url = state.selectedCutJobId ? `/api/cut-jobs/${state.selectedCutJobId}` : "/api/cut-jobs";
   const saved = await postJson(url, payload, state.selectedCutJobId ? "PUT" : "POST");
@@ -472,7 +330,7 @@ document.querySelector("#clearCutJobBtn").addEventListener("click", () => {
 });
 
 elements.newCutJobBtn.addEventListener("click", () => {
-  const orderId = Number(elements.cutJobForm.elements.order_id.value || state.selectedOrderId || 0);
+  const orderId = Number(elements.globalCutOrderSelect?.value || state.selectedOrderId || 0);
   if (!orderId) return showToast("Najpierw wybierz zamówienie");
   prepareNewCutJob(orderId);
   showToast("Nowa pozycja gotowa do wpisania");
@@ -521,27 +379,27 @@ elements.cutTextImportToggleBtn?.addEventListener("click", () => {
 elements.importExportedProjectBtn?.addEventListener("click", importExportedProjectResult);
 
 document.querySelector("#exportCutExcelBtn").addEventListener("click", async () => {
-  const orderId = Number(elements.cutJobForm.elements.order_id.value || state.selectedOrderId || 0);
+  const orderId = Number(elements.globalCutOrderSelect?.value || state.selectedOrderId || 0);
   if (orderId) {
     const result = await postJson(`/api/orders/${orderId}/export-project`, {});
     await postJson(`/api/orders/${orderId}/open-export-folder`, {});
     await refreshCutting();
-    elements.cutStatus.textContent = `Plik GibLab ca?ego zam?wienia: ${result.target}. Od?wie? widok w GibLab!`;
+    elements.cutStatus.textContent = `Plik GibLab ca?ego zam?wienia: ${result.target}. Odśwież? widok w GibLab!`;
     alert(`Zapisano plik ca?ego zam?wienia:
 ${result.target}
 
-Aby zobaczy? go w programie GibLab, przejd? tam i kliknij przycisk "????????" (Od?wie?) po lewej stronie!`);
+Aby zobaczy? go w programie GibLab, przejd? tam i kliknij przycisk "????????" (Odśwież?) po lewej stronie!`);
     return;
   }
-  if (!state.selectedCutJobId) return showToast("Najpierw wybierz zam?wienie albo zlecenie formatek");
+  if (!state.selectedCutJobId) return showToast("Najpierw wybierz zamówienie albo zlecenie formatek");
   const result = await postJson(`/api/cut-jobs/${state.selectedCutJobId}/export-excel`, {});
   await postJson(`/api/cut-jobs/${state.selectedCutJobId}/open-export-folder`, {});
   await refreshCutting();
-  elements.cutStatus.textContent = `Plik GibLab: ${result.target}. Od?wie? widok w GibLab!`;
+  elements.cutStatus.textContent = `Plik GibLab: ${result.target}. Odśwież? widok w GibLab!`;
   alert(`Zapisano plik:
 ${result.target}
 
-Aby zobaczy? go w programie GibLab, przejd? tam i kliknij przycisk "????????" (Od?wie?) po lewej stronie!`);
+Aby zobaczy? go w programie GibLab, przejd? tam i kliknij przycisk "????????" (Odśwież?) po lewej stronie!`);
 });
 
 
@@ -592,7 +450,7 @@ document.querySelector("#cutProjectFile").addEventListener("change", async (even
   const result = await fetchJson(`/api/cut-jobs/${state.selectedCutJobId}/import-project`, { method: "POST", body: form });
   await refreshCutting();
   await refreshOffcuts();
-  elements.cutStatus.textContent = `Odebrano wynik GibLab: ${result.offcuts || 0} resztek, ${result.usedMaterials || 0} materiałów`;
+  elements.cutStatus.textContent = `Odebrano wynik GibLab: ${result.offcuts || 0} resztek, ${result.usedMaterials || 0} materiałÄ‚Ĺ‚w`;
   showToast("Wynik .project zaimportowany");
 });
 
@@ -611,14 +469,7 @@ elements.payerCustomerSelect.addEventListener("change", () => {
   if (customer) elements.paymentForm.elements.payer_name.value = customer.name;
 });
 
-elements.cutJobForm.elements.order_id.addEventListener("change", () => {
-  state.selectedOrderId = Number(elements.cutJobForm.elements.order_id.value) || null;
-  state.selectedCutJobId = null;
-  state.cutParts = [];
-  renderCutJobs();
-  renderCutParts();
-  renderCutTotals();
-});
+
 
 elements.cutJobForm.elements.material_id.addEventListener("change", () => {
   const material = state.flat.find((item) => String(item.id) === elements.cutJobForm.elements.material_id.value);
@@ -711,7 +562,7 @@ elements.postDeliveryBtn?.addEventListener("click", async () => {
   await refreshAll();
   state.selectedDeliveryId = result.id;
   await loadDeliveryLines(result.id);
-  showToast("Dostawa zaksięgowana");
+  showToast("Dostawa zaksiĂ„â„˘gowana");
 });
 
 elements.deliveryCorrectionForm?.addEventListener("submit", async (event) => {
@@ -723,7 +574,7 @@ elements.deliveryCorrectionForm?.addEventListener("submit", async (event) => {
   } else {
     const delivery = currentDelivery();
     if (!delivery) return showToast("Najpierw wybierz zaksięgowaną dostawę");
-    if (delivery.status !== "posted") return showToast("Korektę można zrobić tylko do zaksięgowanej dostawy");
+    if (delivery.status !== "posted") return showToast("KorektĂ„â„˘ moÄąÄ˝na zrobiĂ„â€ˇ tylko do zaksiĂ„â„˘gowanej dostawy");
     saved = await postJson(`/api/deliveries/${delivery.id}/corrections`, payload);
   }
   state.selectedDeliveryCorrectionId = saved.id;
@@ -750,12 +601,12 @@ elements.postDeliveryCorrectionBtn?.addEventListener("click", async () => {
   await refreshAll();
   state.selectedDeliveryCorrectionId = result.id;
   await loadDeliveryCorrectionLines(result.id);
-  showToast("Korekta zaksięgowana");
+  showToast("Korekta zaksiĂ„â„˘gowana");
 });
 
 elements.refreshPurchaseNeedsBtn?.addEventListener("click", async () => {
   await refreshPurchaseNeeds();
-  showToast("Raport zakupów odświeżony");
+  showToast("Raport zakupÄ‚Ĺ‚w odÄąâ€şwieÄąÄ˝ony");
 });
 
 elements.exportPurchaseNeedsCsvBtn?.addEventListener("click", () => {
@@ -764,7 +615,7 @@ elements.exportPurchaseNeedsCsvBtn?.addEventListener("click", () => {
 
 elements.sendPurchaseNeedsTelegramBtn?.addEventListener("click", () => {
   const rows = state.purchaseNeeds.rows || [];
-  if (!rows.length) return showToast("Brak pozycji do wysłania");
+  if (!rows.length) return showToast("Brak pozycji do wysÄąâ€šania");
   const text = buildPurchaseNeedsTelegramText(rows);
   window.open(`https://t.me/share/url?url=&text=${encodeURIComponent(text)}`, "_blank");
 });
@@ -778,7 +629,7 @@ elements.createBackupBtn?.addEventListener("click", async () => {
 
 elements.refreshBackupsBtn?.addEventListener("click", async () => {
   await refreshBackups();
-  showToast("Lista backupów odświeżona");
+  showToast("Lista backupÄ‚Ĺ‚w odÄąâ€şwieÄąÄ˝ona");
 });
 
 [elements.purchaseSearch, elements.purchaseSupplierFilter, elements.purchaseProducerFilter, elements.purchaseTypeFilter].forEach((input) => {
@@ -803,7 +654,7 @@ elements.offcutForm.addEventListener("submit", async (event) => {
 });
 
 elements.editSelectedOffcutBtn?.addEventListener("click", () => {
-  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkę");
+  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkĂ„â„˘");
   fillOffcutForm(state.selectedOffcutId);
 });
 
@@ -832,7 +683,7 @@ elements.offcutStorageForm?.addEventListener("submit", async (event) => {
   elements.offcutStorageForm.reset();
   elements.offcutStorageForm.elements.active.checked = true;
   await refreshOffcutStorageLocations();
-  showToast("Regał zapisany");
+  showToast("RegaÄąâ€š zapisany");
 });
 
 elements.clearOffcutStorageBtn?.addEventListener("click", () => {
@@ -921,7 +772,7 @@ function getStationName() {
 function updateRemaindersUrl() {
   if (!elements.remaindersUrlText) return;
   const station = encodeURIComponent(getStationName());
-  elements.remaindersUrlText.textContent = `${window.location.origin}/giblab/remainders?station=${station}`;
+  elements.remaindersUrlText.textContent = `${window.location.origin.replace(/:3080$/, ':3081')}/giblab/remainders?station=${station}`;
 }
 
 async function refreshCrm() {
@@ -1036,7 +887,7 @@ async function refreshOffcutStorageLocations() {
       <td>${row.active ? "tak" : "nie"}</td>
       <td>
         <button type="button" data-action="edit">Edytuj</button>
-        <button type="button" class="danger" data-action="delete">Usuń</button>
+        <button type="button" class="danger" data-action="delete">UsuÄąâ€ž</button>
       </td>
     </tr>
   `).join("");
@@ -1061,7 +912,7 @@ async function refreshOffcuts() {
       <td>${formatNumber(row.length)}</td>
       <td>${formatNumber(row.width)}</td>
       <td>${formatNumber(row.quantity)}</td>
-      <td>${row.is_business ? "delowa" : "zwykła"}</td>
+      <td>${row.is_business ? "delowa" : "zwykÄąâ€ša"}</td>
       <td>${escapeHtml(row.project_name)}</td>
       <td>${escapeHtml(row.storage_location || "")}</td>
       <td>${formatOffcutStatus(row)}</td>
@@ -1103,7 +954,7 @@ function renderTreeRows(rows, depth = 0) {
     const collapsed = state.collapsed.has(row.id);
     return `
     <div class="tree-row ${row.isfolder ? "folder" : ""}" style="padding-left:${depth * 14}px">
-      ${hasChildren ? `<button class="tree-toggle" data-id="${row.id}" title="${collapsed ? "Rozwiń" : "Zwiń"}">${collapsed ? "+" : "−"}</button>` : `<span class="tree-leaf">•</span>`}
+      ${hasChildren ? `<button class="tree-toggle" data-id="${row.id}" title="${collapsed ? "RozwiÄąâ€ž" : "ZwiÄąâ€ž"}">${collapsed ? "+" : "-"}</button>` : `<span class="tree-leaf">-â‚¬Ë</span>`}
       <span class="tree-name" data-id="${row.id}">${escapeHtml(row.name)}</span>
     </div>
     ${hasChildren && !collapsed ? renderTreeRows(row.children, depth + 1) : ""}
@@ -1123,7 +974,7 @@ function renderMaterials() {
       <td>${row.id}</td>
       <td class="material-name-cell">
         <span class="material-indent" style="width:${Math.max(0, row._depth || 0) * 18}px"></span>
-        ${row._hasChildren ? `<button class="material-folder-toggle" data-material-toggle="${row.id}" type="button" title="${state.materialCollapsed.has(row.id) ? "Rozwiń folder" : "Zwiń folder"}">${state.materialCollapsed.has(row.id) ? "+" : "−"}</button>` : `<span class="material-folder-spacer"></span>`}
+        ${row._hasChildren ? `<button class="material-folder-toggle" data-material-toggle="${row.id}" type="button" title="${state.materialCollapsed.has(row.id) ? "Rozwiń folder" : "Zwiń folder"}">${state.materialCollapsed.has(row.id) ? "+" : "-"}</button>` : `<span class="material-folder-spacer"></span>`}
         <span>${escapeHtml(row.name)}</span>
       </td>
       <td>${escapeHtml(row.code)}</td>
@@ -1274,7 +1125,7 @@ function renderStock() {
       elements.stockForm.elements.event_type.value = "adjust";
       elements.stockForm.elements.material_id.value = button.dataset.stockAdjust;
       elements.stockForm.elements.quantity.value = material?.quantity ?? "";
-      elements.stockForm.elements.note.value = "Korekta ręczna";
+      elements.stockForm.elements.note.value = "Korekta rĂ„â„˘czna";
       elements.stockForm.elements.quantity.focus();
       elements.stockForm.elements.quantity.select?.();
     });
@@ -1316,7 +1167,7 @@ function renderMaterialImportSummary(summary, result, visibleRows = null) {
   if (!elements.materialImportSummary) return;
   if (result) {
     elements.materialImportSummary.textContent =
-      `Import: dodano ${result.added}, zaktualizowano ${result.updated}, pominięto ${result.skipped}, niezaznaczone ${result.skipped_unselected || 0}, błędy ${result.errors?.length || 0}.`;
+      `Import: dodano ${result.added}, zaktualizowano ${result.updated}, pominiĂ„â„˘to ${result.skipped}, niezaznaczone ${result.skipped_unselected || 0}, bÄąâ€šĂ„â„˘dy ${result.errors?.length || 0}.`;
     return;
   }
   const activeRows = state.materialImportRows || [];
@@ -1324,11 +1175,11 @@ function renderMaterialImportSummary(summary, result, visibleRows = null) {
     summary = summarizeMaterialImportRows(activeRows, visibleRows || filterMaterialImportRows(activeRows, elements.materialImportFilter?.value || "all"));
   }
   if (!summary || !summary.total) {
-    elements.materialImportSummary.textContent = "Import aktualizuje tylko katalog materiałów. Stany magazynowe i historia stanów nie są zmieniane.";
+    elements.materialImportSummary.textContent = "Import aktualizuje tylko katalog materiałÄ‚Ĺ‚w. Stany magazynowe i historia stanÄ‚Ĺ‚w nie sĂ„â€¦ zmieniane.";
     return;
   }
   elements.materialImportSummary.textContent =
-    `Razem ${summary.total}, widoczne ${summary.visible ?? summary.total}, zaznaczone ${summary.selected || 0}, poprawne ${summary.valid}, błędne ${summary.invalid}, nowe ${summary.new}, istniejące ${summary.existing}, duplikaty ${summary.duplicates}, ostrzeżenia ${summary.warnings}.`;
+    `Razem ${summary.total}, widoczne ${summary.visible ?? summary.total}, zaznaczone ${summary.selected || 0}, poprawne ${summary.valid}, bÄąâ€šĂ„â„˘dne ${summary.invalid}, nowe ${summary.new}, istniejĂ„â€¦ce ${summary.existing}, duplikaty ${summary.duplicates}, ostrzeÄąÄ˝enia ${summary.warnings}.`;
 }
 
 async function previewMaterialCatalogImport() {
@@ -1339,7 +1190,7 @@ async function previewMaterialCatalogImport() {
   const result = await fetchJson("/api/materials/import-preview", { method: "POST", body: form });
   state.materialImportRows = (result.rows || []).map((row) => ({ ...row, selected: Boolean(row.valid) }));
   renderMaterialImportPreview();
-  showToast(`Podgląd importu: ${result.summary?.total || 0} wierszy`);
+  showToast(`PodglĂ„â€¦d importu: ${result.summary?.total || 0} wierszy`);
 }
 
 async function commitMaterialCatalogImport() {
@@ -1386,7 +1237,7 @@ function summarizeMaterialImportRows(rows, visibleRows = rows) {
 
 async function showStockHistory(materialId) {
   const material = state.flat.find((row) => Number(row.id) === materialId);
-  elements.stockHistoryPanel.textContent = "Laduję historię...";
+  elements.stockHistoryPanel.textContent = "LadujĂ„â„˘ historiĂ„â„˘...";
   try {
     const events = await fetchJson(`/api/stock/${materialId}/events`);
     const title = `${material?.code || materialId} ${material?.name || ""}`.trim();
@@ -1401,7 +1252,7 @@ async function showStockHistory(materialId) {
       ` : "<div>Brak historii dla tego materiału.</div>"}
     `;
   } catch (error) {
-    elements.stockHistoryPanel.textContent = error.message || "Nie udało się pobrać historii";
+    elements.stockHistoryPanel.textContent = error.message || "Nie udaÄąâ€šo siĂ„â„˘ pobraĂ„â€ˇ historii";
   }
 }
 
@@ -1433,7 +1284,7 @@ function renderCustomers() {
 
 function formatOffcutStatus(row) {
   if (row.status === "reserved") return `zarezerwowana: ${escapeHtml(row.reserved_by || "")}`;
-  if (row.status === "used") return `zużyta: ${escapeHtml(row.used_by || "")}`;
+  if (row.status === "used") return `zuÄąÄ˝yta: ${escapeHtml(row.used_by || "")}`;
   return "wolna";
 }
 
@@ -1455,8 +1306,8 @@ function renderCustomerRelatedDocs() {
     return;
   }
   if (!state.customerRelatedDocs.length) {
-    elements.customerDocsBody.innerHTML = `<tr><td colspan="8">Brak powiązanych dokumentów dla klienta ${escapeHtml(selectedCustomer.name)}.</td></tr>`;
-    if (elements.customerDocsStatus) elements.customerDocsStatus.textContent = "Tego klienta można usunąć całkowicie.";
+    elements.customerDocsBody.innerHTML = `<tr><td colspan="8">Brak powiĂ„â€¦zanych dokumentÄ‚Ĺ‚w dla klienta ${escapeHtml(selectedCustomer.name)}.</td></tr>`;
+    if (elements.customerDocsStatus) elements.customerDocsStatus.textContent = "Tego klienta moÄąÄ˝na usunĂ„â€¦Ă„â€ˇ caÄąâ€škowicie.";
     state.selectedCustomerDocIndex = null;
     return;
   }
@@ -1466,7 +1317,7 @@ function renderCustomerRelatedDocs() {
       : "";
     const isSelected = Number(state.selectedCustomerDocIndex) === index;
     const orderBundleButton = row.type === "order" && !row.can_delete
-      ? `<button type="button" class="danger" data-delete-order-bundle-index="${index}">Usuń komplet</button>`
+      ? `<button type="button" class="danger" data-delete-order-bundle-index="${index}">UsuÄąâ€ž komplet</button>`
       : "";
     return `
       <tr class="material-row ${isSelected ? "selected-row" : ""}" data-index="${index}">
@@ -1477,7 +1328,7 @@ function renderCustomerRelatedDocs() {
         <td>${formatMoney(row.value || 0)}</td>
         <td>${row.can_delete ? "tak" : "nie"}</td>
         <td>${blockers}</td>
-        <td>${row.can_delete ? `<button type="button" class="danger" data-delete-doc-index="${index}">Usuń</button>` : ""}${orderBundleButton}</td>
+        <td>${row.can_delete ? `<button type="button" class="danger" data-delete-doc-index="${index}">UsuÄąâ€ž</button>` : ""}${orderBundleButton}</td>
       </tr>
     `;
   }).join("");
@@ -1501,7 +1352,7 @@ function renderCustomerRelatedDocs() {
   const deletableCount = state.customerRelatedDocs.filter((row) => row.can_delete).length;
   const blockedCount = state.customerRelatedDocs.length - deletableCount;
   if (elements.customerDocsStatus) {
-    elements.customerDocsStatus.textContent = `Dokumenty: ${state.customerRelatedDocs.length}, można usunąć: ${deletableCount}, zablokowane: ${blockedCount}`;
+    elements.customerDocsStatus.textContent = `Dokumenty: ${state.customerRelatedDocs.length}, moÄąÄ˝na usunĂ„â€¦Ă„â€ˇ: ${deletableCount}, zablokowane: ${blockedCount}`;
   }
 }
 
@@ -1522,6 +1373,8 @@ function renderPayerCustomerSelect() {
   `).join("");
   select.value = currentValue;
 }
+
+
 
 function renderQuoteOrderSelect() {
   const select = elements.quoteLineForm.elements.order_id;
@@ -1550,7 +1403,7 @@ function renderCutServicePriceSelect() {
     !looksLikeMaterialPrice(item) && allowedServiceCodes.has(String(item.code || "").toUpperCase())
   );
   select.innerHTML = `<option value="">Cena usługi z cennika</option>` + serviceItems.map((item) => `
-    <option value="${item.id}">${escapeHtml(item.category || "Usługa")} | ${escapeHtml(item.name)} / ${formatMoney(item.unit_price)} ${escapeHtml(item.unit)}</option>
+    <option value="${item.id}">${escapeHtml(item.category || "UsÄąâ€šuga")} | ${escapeHtml(item.name)} / ${formatMoney(item.unit_price)} ${escapeHtml(item.unit)}</option>
   `).join("");
   if (serviceItems.some((item) => String(item.id) === currentValue)) select.value = currentValue;
 }
@@ -1591,7 +1444,7 @@ function renderSupplies() {
       <td>${formatMoney(row.price)}</td>
       <td>${formatNumber(row.quantity)}</td>
       <td>${escapeHtml(row.notes)}</td>
-      <td><button class="small danger" data-delete-supply="${row.id}" type="button">Usuń</button></td>
+      <td><button class="small danger" data-delete-supply="${row.id}" type="button">UsuÄąâ€ž</button></td>
     </tr>
   `).join("");
   elements.suppliesBody.querySelectorAll("tr").forEach((rowElement) => {
@@ -1608,7 +1461,7 @@ function renderSupplies() {
         elements.supplyForm?.reset();
       }
       await refreshSupplies();
-      showToast("Pozycja usunięta");
+      showToast("Pozycja usuniĂ„â„˘ta");
     });
   });
 }
@@ -1639,7 +1492,7 @@ function renderPurchaseNeeds() {
   const summary = state.purchaseNeeds.summary || {};
   elements.purchaseNeedsSummary.textContent = rows.length
     ? `Do zamówienia: ${rows.length} pozycji, razem ${formatNumber(summary.total_order_quantity)} jednostek.`
-    : "Brak materiałów poniżej minimum magazynowego.";
+    : "Brak materiałÄ‚Ĺ‚w poniÄąÄ˝ej minimum magazynowego.";
   elements.purchaseNeedsBody.innerHTML = rows.length
     ? rows.map((row) => `
       <tr class="stock-alert">
@@ -1658,16 +1511,16 @@ function renderPurchaseNeeds() {
         <td>${escapeHtml(row.location || "")}</td>
       </tr>
     `).join("")
-    : `<tr><td colspan="13">Wszystkie aktywne materiały są na poziomie minimum albo powyżej.</td></tr>`;
+    : `<tr><td colspan="13">Wszystkie aktywne materiały sĂ„â€¦ na poziomie minimum albo powyÄąÄ˝ej.</td></tr>`;
 }
 
 function buildPurchaseNeedsTelegramText(rows) {
   const lines = rows.map((row) => {
     const material = [row.code, row.name].filter(Boolean).join(" - ");
     const supplier = row.supplier ? ` | ${row.supplier}` : "";
-    return `${material}: zamówić ${formatNumber(row.order_quantity)} ${row.unit || ""}${supplier}`;
+    return `${material}: zamÄ‚Ĺ‚wiĂ„â€ˇ ${formatNumber(row.order_quantity)} ${row.unit || ""}${supplier}`;
   });
-  return [`Lista zakupów (${rows.length})`, ...lines].join("\n");
+  return [`Lista zakupÄ‚Ĺ‚w (${rows.length})`, ...lines].join("\n");
 }
 
 function renderBackups() {
@@ -1680,11 +1533,11 @@ function renderBackups() {
         <td>${escapeHtml(formatBackupDate(backup.created_at))}</td>
         <td>
           <button class="small" data-download-backup="${escapeHtml(backup.filename)}" type="button">Pobierz</button>
-          <button class="small danger" data-restore-backup="${escapeHtml(backup.filename)}" type="button">Przywróć</button>
+          <button class="small danger" data-restore-backup="${escapeHtml(backup.filename)}" type="button">PrzywrÄ‚Ĺ‚Ă„â€ˇ</button>
         </td>
       </tr>
     `).join("")
-    : `<tr><td colspan="4">Brak backupów.</td></tr>`;
+    : `<tr><td colspan="4">Brak backupÄ‚Ĺ‚w.</td></tr>`;
   elements.backupsBody.querySelectorAll("[data-download-backup]").forEach((button) => {
     button.addEventListener("click", () => {
       window.location.href = `/api/backups/${encodeURIComponent(button.dataset.downloadBackup)}/download`;
@@ -1692,11 +1545,11 @@ function renderBackups() {
   });
   elements.backupsBody.querySelectorAll("[data-restore-backup]").forEach((button) => {
     button.addEventListener("click", async () => {
-      const ok = confirm("Przywrócenie backupu zastąpi aktualną bazę danych. Przed przywróceniem program utworzy kopię bezpieczeństwa. Kontynuować?");
+      const ok = confirm("PrzywrÄ‚Ĺ‚cenie backupu zastĂ„â€¦pi aktualnĂ„â€¦ bazĂ„â„˘ danych. Przed przywrÄ‚Ĺ‚ceniem program utworzy kopiĂ„â„˘ bezpieczeÄąâ€žstwa. KontynuowaĂ„â€ˇ?");
       if (!ok) return;
       const result = await postJson(`/api/backups/${encodeURIComponent(button.dataset.restoreBackup)}/restore`, {});
-      elements.backupStatus.textContent = `${result.message} Backup przed przywróceniem: ${result.pre_restore_backup}`;
-      showToast("Backup przywrócony. Zrestartuj program.");
+      elements.backupStatus.textContent = `${result.message} Backup przed przywrÄ‚Ĺ‚ceniem: ${result.pre_restore_backup}`;
+      showToast("Backup przywrÄ‚Ĺ‚cony. Zrestartuj program.");
     });
   });
 }
@@ -1759,14 +1612,14 @@ function renderDeliveryLines() {
       <td>${escapeHtml(row.material_name || "")}</td>
       <td>${formatNumber(row.quantity)}</td>
       <td>${formatMoney(row.unit_price)}</td>
-      <td>${delivery?.status === "posted" ? "" : `<button class="small danger" data-delete-delivery-line="${row.id}" type="button">Usuń</button>`}</td>
+      <td>${delivery?.status === "posted" ? "" : `<button class="small danger" data-delete-delivery-line="${row.id}" type="button">UsuÄąâ€ž</button>`}</td>
     </tr>
   `).join("");
   elements.deliveryLinesBody.querySelectorAll("[data-delete-delivery-line]").forEach((button) => {
     button.addEventListener("click", async () => {
       await fetchJson(`/api/delivery-lines/${button.dataset.deleteDeliveryLine}`, { method: "DELETE" });
       await refreshDeliveries();
-      showToast("Pozycja dostawy usunięta");
+      showToast("Pozycja dostawy usuniĂ„â„˘ta");
     });
   });
   updateDeliveryStatusText();
@@ -1799,14 +1652,14 @@ function renderDeliveryCorrectionLines() {
       <td>${escapeHtml(row.material_name || "")}</td>
       <td>${formatNumber(row.quantity_delta)}</td>
       <td>${formatMoney(row.unit_price_net)}</td>
-      <td>${correction?.status === "draft" ? `<button class="small danger" data-delete-correction-line="${row.id}" type="button">Usuń</button>` : ""}</td>
+      <td>${correction?.status === "draft" ? `<button class="small danger" data-delete-correction-line="${row.id}" type="button">UsuÄąâ€ž</button>` : ""}</td>
     </tr>
   `).join("");
   elements.deliveryCorrectionLinesBody.querySelectorAll("[data-delete-correction-line]").forEach((button) => {
     button.addEventListener("click", async () => {
       await fetchJson(`/api/delivery-correction-lines/${button.dataset.deleteCorrectionLine}`, { method: "DELETE" });
       await refreshDeliveries();
-      showToast("Pozycja korekty usunięta");
+      showToast("Pozycja korekty usuniĂ„â„˘ta");
     });
   });
   updateDeliveryCorrectionStatusText();
@@ -1871,12 +1724,12 @@ function updateDeliveryStatusText() {
   if (!elements.deliveryStatus) return;
   const delivery = currentDelivery();
   if (!delivery) {
-    elements.deliveryStatus.textContent = "Utwórz albo wybierz dostawę. Szkic nie zmienia magazynu.";
+    elements.deliveryStatus.textContent = "UtwÄ‚Ĺ‚rz albo wybierz dostawę. Szkic nie zmienia magazynu.";
     return;
   }
   elements.deliveryStatus.textContent = delivery.status === "posted"
-    ? `Dostawa ${delivery.id} jest zaksięgowana. Stany zostały zwiększone, a historia magazynu zapisana.`
-    : `Dostawa ${delivery.id} jest szkicem. Stan rośnie dopiero po kliknięciu „Zaksięguj dostawę”.`;
+    ? `Dostawa ${delivery.id} jest zaksiĂ„â„˘gowana. Stany zostaÄąâ€šy zwiĂ„â„˘kszone, a historia magazynu zapisana.`
+    : `Dostawa ${delivery.id} jest szkicem. Stan roÄąâ€şnie dopiero po klikniĂ„â„˘ciu -â‚¬ĹľZaksiĂ„â„˘guj dostawę-â‚¬ĹĄ.`;
 }
 
 function updateDeliveryCorrectionStatusText() {
@@ -1887,8 +1740,8 @@ function updateDeliveryCorrectionStatusText() {
     return;
   }
   elements.deliveryCorrectionStatus.textContent = correction.status === "posted"
-    ? `Korekta ${correction.id} jest zaksięgowana. Historia magazynu została zapisana.`
-    : `Korekta ${correction.id} jest szkicem. Ujemna delta zużyje tylko dostępny stan, bez naruszania rezerwacji.`;
+    ? `Korekta ${correction.id} jest zaksiĂ„â„˘gowana. Historia magazynu zostaÄąâ€ša zapisana.`
+    : `Korekta ${correction.id} jest szkicem. Ujemna delta zuÄąÄ˝yje tylko dostĂ„â„˘pny stan, bez naruszania rezerwacji.`;
 }
 
 function renderQuoteLines() {
@@ -1896,7 +1749,7 @@ function renderQuoteLines() {
   const order = state.orders.find((row) => String(row.id) === String(elements.quoteLineForm.elements.order_id.value));
   const balance = total - Number(order?.paid_amount || 0);
   elements.quoteSummary.textContent = order
-    ? `Zamówienie ${order.order_number}: ${formatMoney(total)} zł według cennika. Wpłacono: ${formatMoney(order.paid_amount)} zł, do zapłaty: ${formatMoney(balance)} zł.`
+    ? `Zamówienie ${order.order_number}: ${formatMoney(total)} zł według cennika. WpÄąâ€šacono: ${formatMoney(order.paid_amount)} zł, do zapÄąâ€šaty: ${formatMoney(balance)} zł.`
     : "Wybierz zamówienie, żeby policzyć wycenę.";
   elements.quoteLinesBody.innerHTML = state.quoteLines.map((row) => `
     <tr>
@@ -1906,7 +1759,7 @@ function renderQuoteLines() {
       <td>${escapeHtml(row.unit)}</td>
       <td>${formatMoney(row.unit_price)}</td>
       <td>${formatMoney(row.line_total)}</td>
-      <td><button class="small danger" data-delete-quote="${row.id}" type="button">Usuń</button></td>
+      <td><button class="small danger" data-delete-quote="${row.id}" type="button">UsuÄąâ€ž</button></td>
     </tr>
   `).join("");
   elements.quoteLinesBody.querySelectorAll("[data-delete-quote]").forEach((button) => {
@@ -1915,19 +1768,12 @@ function renderQuoteLines() {
       await fetchJson(`/api/quote-lines/${button.dataset.deleteQuote}`, { method: "DELETE" });
       await refreshCrm();
       await loadQuoteLines(orderId);
-      showToast("Pozycja wyceny usunięta");
+      showToast("Pozycja wyceny usuniĂ„â„˘ta");
     });
   });
 }
 
-function renderCutOrderSelect() {
-  const select = elements.cutJobForm.elements.order_id;
-  const currentValue = select.value || (state.selectedOrderId ? String(state.selectedOrderId) : "");
-  select.innerHTML = `<option value="">Wybierz zamówienie / klienta</option>` + state.orders.map((order) => `
-    <option value="${order.id}">${escapeHtml(order.order_number)} - ${escapeHtml(order.customer_name)} - ${escapeHtml(order.title)}</option>
-  `).join("");
-  select.value = currentValue;
-}
+
 
 function renderCutMaterialSelect() {
   const select = elements.cutJobForm.elements.material_id;
@@ -2043,17 +1889,17 @@ function cutJobMaterialLabel(job) {
 
 function compactMaterialName(name) {
   return String(name || "")
-    .replace(/\bPłyta\s+laminowana\b/gi, "Płyta")
-    .replace(/\bPłyta\s+wiórowa\b/gi, "Płyta")
+    .replace(/\bPÄąâ€šyta\s+laminowana\b/gi, "PÄąâ€šyta")
+    .replace(/\bPÄąâ€šyta\s+wiÄ‚Ĺ‚rowa\b/gi, "PÄąâ€šyta")
     .replace(/\s+/g, " ")
     .trim();
 }
 
 function normalizeText(value) {
   return String(value || "")
-    .replaceAll("ł", "l")
-    .replaceAll("Ł", "L")
-    .replaceAll("Ł", "L")
+    .replaceAll("Äąâ€š", "l")
+    .replaceAll("Äąďż˝", "L")
+    .replaceAll("Äąďż˝", "L")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
@@ -2107,13 +1953,11 @@ function applyCutJobMaterial(material) {
 }
 
 function renderCutJobs() {
-  const selectedOrderId = Number(elements.cutJobForm.elements.order_id.value || state.selectedOrderId || 0);
+  const selectedOrderId = Number(elements.globalCutOrderSelect?.value || state.selectedOrderId || 0);
   const rows = selectedOrderId ? state.cutJobs.filter((row) => Number(row.order_id) === selectedOrderId) : state.cutJobs;
   elements.cutJobsBody.innerHTML = rows.map((row) => `
     <tr class="material-row ${row.id === state.selectedCutJobId ? "selected-row" : ""}" data-id="${row.id}">
       <td>${row.id}</td>
-      <td>${escapeHtml(row.order_number || "")}</td>
-      <td>${escapeHtml(row.customer_name || "")}</td>
       <td>${escapeHtml(row.name)}</td>
       <td>${escapeHtml(cutJobMaterialLabel(row))}</td>
       <td>${escapeHtml(row.status)}</td>
@@ -2157,7 +2001,7 @@ function renderCutParts() {
       <td><input class="cut-table-check" data-cut-id="${row.id}" data-cut-field="edge_left" type="checkbox" ${row.edge_left ? "checked" : ""}></td>
       <td><input class="cut-table-check" data-cut-id="${row.id}" data-cut-field="edge_right" type="checkbox" ${row.edge_right ? "checked" : ""}></td>
       <td><input class="cut-table-input cut-table-name" data-cut-id="${row.id}" data-cut-field="name" value="${escapeHtml(row.name)}"></td>
-      <td><button class="small danger" data-delete-cut-part="${row.id}" type="button">Usuń</button></td>
+      <td><button class="small danger" data-delete-cut-part="${row.id}" type="button">UsuÄąâ€ž</button></td>
     </tr>
   `).join("") + renderCutPartDraftRow();
   elements.cutPartsBody.querySelectorAll("[data-delete-cut-part]").forEach((button) => {
@@ -2165,7 +2009,7 @@ function renderCutParts() {
       await fetchJson(`/api/cut-parts/${button.dataset.deleteCutPart}`, { method: "DELETE" });
       await loadCutParts(state.selectedCutJobId);
       await refreshCutting();
-      showToast("Formatka usunięta");
+      showToast("Formatka usuniĂ„â„˘ta");
     });
   });
   elements.cutPartsBody.querySelectorAll("[data-cut-field]").forEach((field) => {
@@ -2240,7 +2084,7 @@ async function saveDraftCutPart(row) {
   }
   const payload = { ...cutPartMaterialPayload(), ...cutPartPayloadFromTableRow(row) };
   if (!payload.length || !payload.width || !payload.quantity) {
-    showToast("Podaj D, S i ilość");
+    showToast("Podaj D, S i iloÄąâ€şĂ„â€ˇ");
     return false;
   }
   await postJson(`/api/cut-jobs/${state.selectedCutJobId}/parts`, payload);
@@ -2322,7 +2166,7 @@ function renderCutQuoteLines() {
       <td>${formatNumber(row.quantity)}</td>
       <td>${formatMoney(row.unit_price)}</td>
       <td>${formatMoney(row.line_total)}</td>
-      <td><button class="small danger" data-delete-cut-quote="${row.id}" type="button">Usuń</button></td>
+      <td><button class="small danger" data-delete-cut-quote="${row.id}" type="button">UsuÄąâ€ž</button></td>
     </tr>
   `).join("");
   elements.cutQuoteLinesBody.querySelectorAll("[data-delete-cut-quote]").forEach((button) => {
@@ -2334,13 +2178,13 @@ function renderCutQuoteLines() {
       renderCutQuoteLines();
       await refreshCrm();
       await refreshPricing();
-      showToast("Robocizna usunięta");
+      showToast("Robocizna usuniĂ„â„˘ta");
     });
   });
 }
 
 function edgeMark(value) {
-  return value ? "✓" : "";
+  return value ? "-Ĺ›â€ś" : "";
 }
 
 function renderCutTotals(serverTotals) {
@@ -2381,8 +2225,6 @@ function renderOrders() {
     return `
       <tr class="material-row ${paymentClass} ${String(row.id) === String(state.selectedOrderId) ? "selected-row" : ""}" data-id="${row.id}">
         <td>${row.id}</td>
-        <td>${escapeHtml(row.order_number)}</td>
-        <td>${escapeHtml(row.customer_name)}</td>
         <td>${escapeHtml(row.title)}</td>
         <td>${escapeHtml(row.due_date)}</td>
         <td>${escapeHtml(row.production_status)}</td>
@@ -2455,7 +2297,7 @@ function renderCalendar() {
   const todayBucket = rows.find((row) => row.day === today);
   elements.calendarSummary.innerHTML = `
     <div><strong>Dzisiaj:</strong> ${formatCalendarDate(today)} | zamówienia: ${todayBucket?.orders.length || 0} | pozycje: ${todayBucket?.jobCount || 0} | m2: ${formatNumber(todayBucket?.areaM2 || 0)}</div>
-    <div><strong>Razem:</strong> zamówienia: ${formatNumber(totalOrders)} | nie zapłacone: ${formatNumber(unpaidOrders)}</div>
+    <div><strong>Razem:</strong> zamówienia: ${formatNumber(totalOrders)} | nie zapÄąâ€šacone: ${formatNumber(unpaidOrders)}</div>
   `;
   elements.calendarBody.innerHTML = rows.map((row) => {
     const hasUnpaid = row.unpaidCount > 0;
@@ -2525,7 +2367,7 @@ function renderDashboard() {
         <td>${formatNumber(row.required)}</td>
       </tr>
     `).join("")
-    : `<tr><td colspan="4">Brak brakujących materiałów dla aktywnych zamówień.</td></tr>`;
+    : `<tr><td colspan="4">Brak brakujĂ„â€¦cych materiałÄ‚Ĺ‚w dla aktywnych zamówień.</td></tr>`;
 
   elements.dashboardPaymentsBody.innerHTML = paymentRows.length
     ? paymentRows.slice(0, 50).map((order) => `
@@ -2664,7 +2506,8 @@ function selectOrderRow(id) {
   state.selectedOrderId = id;
   elements.paymentForm.elements.order_id.value = id;
   elements.quoteLineForm.elements.order_id.value = String(id);
-  elements.cutJobForm.elements.order_id.value = String(id);
+  if (elements.globalCutOrderSelect) elements.globalCutOrderSelect.value = String(id);
+  if (elements.cuttingPositionsPanel && id) elements.cuttingPositionsPanel.style.display = "block";
   prepareNotification(id);
   loadQuoteLines(id);
   renderOrders();
@@ -2673,34 +2516,34 @@ function selectOrderRow(id) {
 
 async function deleteSelectedCustomer() {
   if (!state.selectedCustomerId) return showToast("Najpierw zaznacz klienta");
-  if (!confirm("Usunąć klienta z aktywnej listy? Historia zamówień zostanie zachowana.")) return;
+  if (!confirm("UsunĂ„â€¦Ă„â€ˇ klienta z aktywnej listy? Historia zamówień zostanie zachowana.")) return;
   await fetchJson(`/api/customers/${state.selectedCustomerId}`, { method: "DELETE" });
   state.selectedCustomerId = null;
   state.customerRelatedDocs = [];
   elements.customerForm.reset();
   await refreshCrm();
   renderCustomerRelatedDocs();
-  showToast("Klient usunięty");
+  showToast("Klient usuniĂ„â„˘ty");
 }
 
 async function deleteCustomerDocumentByIndex(index) {
   const doc = state.customerRelatedDocs[index];
-  if (!doc?.can_delete || !doc.delete_url) return showToast("Tego dokumentu nie można usunąć tutaj");
-  if (!confirm(`Usunąć dokument: ${doc.type_label} ${doc.document}?`)) return;
+  if (!doc?.can_delete || !doc.delete_url) return showToast("Tego dokumentu nie moÄąÄ˝na usunĂ„â€¦Ă„â€ˇ tutaj");
+  if (!confirm(`UsunĂ„â€¦Ă„â€ˇ dokument: ${doc.type_label} ${doc.document}?`)) return;
   await fetchJson(doc.delete_url, { method: "DELETE" });
   await refreshCrm();
   await loadCustomerRelatedDocs(state.selectedCustomerId);
-  showToast("Dokument usunięty");
+  showToast("Dokument usuniĂ„â„˘ty");
 }
 
 async function deleteCustomerOrderBundleByIndex(index) {
   const doc = state.customerRelatedDocs[index];
-  if (!doc || doc.type !== "order") return showToast("Zaznacz zamówienie do usunięcia kompletu");
-  if (!confirm(`Usunąć cały komplet zamówienia ${doc.document}: wpłaty, wyceny, formatki i zamówienie?`)) return;
+  if (!doc || doc.type !== "order") return showToast("Zaznacz zamówienie do usuniĂ„â„˘cia kompletu");
+  if (!confirm(`UsunĂ„â€¦Ă„â€ˇ cały komplet zamówienia ${doc.document}: wpłaty, wyceny, formatki i zamówienie?`)) return;
   const result = await fetchJson(`/api/orders/${doc.id}/full`, { method: "DELETE" });
   await refreshCrm();
   await loadCustomerRelatedDocs(state.selectedCustomerId);
-  showToast(`Usunięto komplet: ${result.orders || 0} zamówienie`);
+  showToast(`UsuniĂ„â„˘to komplet: ${result.orders || 0} zamówienie`);
 }
 
 async function deleteSelectedCustomerDocs() {
@@ -2709,14 +2552,14 @@ async function deleteSelectedCustomerDocs() {
   const docs = checked
     .map((input) => state.customerRelatedDocs[Number(input.dataset.docIndex)])
     .filter((doc) => doc?.can_delete && doc.delete_url);
-  if (!docs.length) return showToast("Zaznacz dokumenty, które można usunąć");
-  if (!confirm(`Usunąć zaznaczone dokumenty: ${docs.length}?`)) return;
+  if (!docs.length) return showToast("Zaznacz dokumenty, ktÄ‚Ĺ‚re moÄąÄ˝na usunĂ„â€¦Ă„â€ˇ");
+  if (!confirm(`UsunĂ„â€¦Ă„â€ˇ zaznaczone dokumenty: ${docs.length}?`)) return;
   for (const doc of docs) {
     await fetchJson(doc.delete_url, { method: "DELETE" });
   }
   await refreshCrm();
   await loadCustomerRelatedDocs(state.selectedCustomerId);
-  showToast(`Usunięto dokumenty: ${docs.length}`);
+  showToast(`UsuniĂ„â„˘to dokumenty: ${docs.length}`);
 }
 
 async function deleteSelectedCustomerOrderBundle() {
@@ -2728,7 +2571,7 @@ async function deleteSelectedCustomerOrderBundle() {
 
 async function deleteSelectedOrder() {
   if (!state.selectedOrderId) return showToast("Najpierw zaznacz zamówienie");
-  if (!confirm("Usunąć zamówienie?")) return;
+  if (!confirm("UsunĂ„â€¦Ă„â€ˇ zamówienie?")) return;
   const deletedId = state.selectedOrderId;
   try {
     await fetchJson(`/api/orders/${deletedId}`, { method: "DELETE" });
@@ -2737,46 +2580,46 @@ async function deleteSelectedOrder() {
     const blockers = Array.isArray(error.blockers) && error.blockers.length
       ? `\n\nBlokady:\n${error.blockers.map((blocker) => `- ${blocker.message || blocker.code}`).join("\n")}`
       : "";
-    const deleteBundle = confirm(`Zamówienie ma powiązane dokumenty i nie można go usunąć pojedynczo.${blockers}\n\nUsunąć cały komplet: wpłaty, wyceny, formatki i zamówienie?`);
+    const deleteBundle = confirm(`Zamówienie ma powiązane dokumenty i nie moÄąÄ˝na go usunĂ„â€¦Ă„â€ˇ pojedynczo.${blockers}\n\nUsunĂ„â€¦Ă„â€ˇ cały komplet: wpłaty, wyceny, formatki i zamówienie?`);
     if (!deleteBundle) return;
     await fetchJson(`/api/orders/${deletedId}/full`, { method: "DELETE" });
   }
   if (String(state.selectedOrderId) === String(deletedId)) await resetOrderWorkspace();
   await refreshAll();
-  showToast("Zamówienie usunięte");
+  showToast("Zamówienie usuniĂ„â„˘te");
 }
 
 async function deleteSelectedPriceItem() {
   if (!state.selectedPriceItemId) return showToast("Najpierw zaznacz pozycję cennika");
-  if (!confirm("Usunąć pozycję cennika?")) return;
+  if (!confirm("UsunĂ„â€¦Ă„â€ˇ pozycję cennika?")) return;
   await fetchJson(`/api/price-items/${state.selectedPriceItemId}`, { method: "DELETE" });
   state.selectedPriceItemId = null;
   elements.priceItemForm.reset();
   await refreshPricing();
-  showToast("Pozycja cennika usunięta");
+  showToast("Pozycja cennika usuniĂ„â„˘ta");
 }
 
 async function deleteSelectedMaterial() {
   if (!state.selectedId) return showToast("Najpierw zaznacz materiał");
-  if (!confirm("Usunąć tę pozycję materiału?")) return;
+  if (!confirm("UsunĂ„â€¦Ă„â€ˇ tĂ„â„˘ pozycję materiału?")) return;
   await fetchJson(`/api/materials/${state.selectedId}`, { method: "DELETE" });
   await refreshAll();
   resetMaterialForm();
-  showToast("Pozycja materiału usunięta");
+  showToast("Pozycja materiału usuniĂ„â„˘ta");
 }
 
 async function deleteSelectedOffcut() {
-  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkę");
-  if (!confirm("Usunąć resztkę?")) return;
+  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkĂ„â„˘");
+  if (!confirm("UsunĂ„â€¦Ă„â€ˇ resztkĂ„â„˘?")) return;
   await fetchJson(`/api/offcuts/${encodeURIComponent(state.selectedOffcutId)}`, { method: "DELETE" });
   state.selectedOffcutId = null;
   elements.offcutForm.reset();
   await refreshOffcuts();
-  showToast("Resztka usunięta");
+  showToast("Resztka usuniĂ„â„˘ta");
 }
 
 async function assignSelectedOffcutStorage() {
-  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkę");
+  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkĂ„â„˘");
   const row = await postJson(`/api/offcuts/${encodeURIComponent(state.selectedOffcutId)}/assign-storage`, {});
   state.selectedOffcutId = row.id;
   await refreshOffcuts();
@@ -2785,8 +2628,8 @@ async function assignSelectedOffcutStorage() {
 }
 
 async function reserveSelectedOffcut() {
-  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkę");
-  const project = prompt("Do jakiego projektu / rozkroju rezerwujesz tę resztkę?", "") || "";
+  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkĂ„â„˘");
+  const project = prompt("Do jakiego projektu / rozkroju rezerwujesz tĂ„â„˘ resztkĂ„â„˘?", "") || "";
   const row = await postJson(`/api/offcuts/${encodeURIComponent(state.selectedOffcutId)}/reserve`, {
     station: getStationName(),
     project
@@ -2798,7 +2641,7 @@ async function reserveSelectedOffcut() {
 }
 
 async function releaseSelectedOffcut() {
-  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkę");
+  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkĂ„â„˘");
   const row = await postJson(`/api/offcuts/${encodeURIComponent(state.selectedOffcutId)}/release`, {});
   state.selectedOffcutId = row.id;
   await refreshOffcuts();
@@ -2807,13 +2650,13 @@ async function releaseSelectedOffcut() {
 }
 
 async function useSelectedOffcut() {
-  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkę");
-  if (!confirm("Oznaczyć resztkę jako zużytą? Nie będzie już widoczna jako wolna dla GibLab.")) return;
+  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkĂ„â„˘");
+  if (!confirm("OznaczyĂ„â€ˇ resztkĂ„â„˘ jako zuÄąÄ˝ytĂ„â€¦? Nie bĂ„â„˘dzie juÄąÄ˝ widoczna jako wolna dla GibLab.")) return;
   const row = await postJson(`/api/offcuts/${encodeURIComponent(state.selectedOffcutId)}/use`, { station: getStationName() });
   state.selectedOffcutId = row.id;
   await refreshOffcuts();
   fillOffcutForm(row.id);
-  showToast("Resztka oznaczona jako zużyta");
+  showToast("Resztka oznaczona jako zuÄąÄ˝yta");
 }
 
 function fillOffcutStorageForm(id) {
@@ -2829,7 +2672,7 @@ function fillOffcutStorageForm(id) {
 }
 
 async function deleteOffcutStorageLocation(id) {
-  if (!confirm("Usunąć regułę regału? Resztki nie znikną, ale po przeliczeniu mogą dostać inne miejsce.")) return;
+  if (!confirm("UsunĂ„â€¦Ă„â€ˇ reguÄąâ€šĂ„â„˘ regaÄąâ€šu? Resztki nie zniknĂ„â€¦, ale po przeliczeniu mogĂ„â€¦ dostaĂ„â€ˇ inne miejsce.")) return;
   await fetchJson(`/api/offcut-storage-locations/${id}`, { method: "DELETE" });
   if (Number(state.selectedOffcutStorageLocationId) === Number(id)) {
     state.selectedOffcutStorageLocationId = null;
@@ -2837,11 +2680,11 @@ async function deleteOffcutStorageLocation(id) {
     if (elements.offcutStorageForm?.elements.active) elements.offcutStorageForm.elements.active.checked = true;
   }
   await refreshOffcutStorageLocations();
-  showToast("Reguła regału usunięta");
+  showToast("ReguÄąâ€ša regaÄąâ€šu usuniĂ„â„˘ta");
 }
 
 async function reassignAllOffcutStorage() {
-  if (!confirm("Przeliczyć miejsce dla wszystkich dostępnych resztek według aktualnych regałów?")) return;
+  if (!confirm("PrzeliczyĂ„â€ˇ miejsce dla wszystkich dostĂ„â„˘pnych resztek według aktualnych regaÄąâ€šÄ‚Ĺ‚w?")) return;
   const result = await postJson("/api/offcuts/reassign-storage", {});
   await refreshOffcuts();
   showToast(`Przeliczono resztki: ${result.updated}`);
@@ -2864,7 +2707,8 @@ function fillOrderForm(id) {
   state.selectedOrderId = id;
   elements.paymentForm.elements.order_id.value = id;
   elements.quoteLineForm.elements.order_id.value = String(id);
-  elements.cutJobForm.elements.order_id.value = String(id);
+  if (elements.globalCutOrderSelect) elements.globalCutOrderSelect.value = String(id);
+  if (elements.cuttingPositionsPanel && id) elements.cuttingPositionsPanel.style.display = "block";
   for (const field of elements.orderForm.elements) {
     if (!field.name) continue;
     if (field.type === "checkbox") field.checked = Boolean(row[field.name]);
@@ -2897,7 +2741,8 @@ function openCutPositionForSelectedOrder() {
 function openSelectedOrderCutting() {
   if (!state.selectedOrderId) return showToast("Najpierw kliknij zamówienie");
   const orderId = Number(state.selectedOrderId);
-  elements.cutJobForm.elements.order_id.value = String(orderId);
+  if (elements.globalCutOrderSelect) elements.globalCutOrderSelect.value = String(orderId);
+  if (elements.cuttingPositionsPanel && orderId) elements.cuttingPositionsPanel.style.display = "block";
   const jobs = state.cutJobs.filter((job) => Number(job.order_id) === orderId);
   activateTab("cutting");
   if (jobs.length) {
@@ -2905,7 +2750,7 @@ function openSelectedOrderCutting() {
     showToast("Otwarto formatki zamówienia");
   } else {
     prepareNewCutJob(orderId);
-    showToast("Brak pozycji formatek. Przygotowano nową pozycję.");
+    showToast("Brak pozycji formatek. Przygotowano nowĂ„â€¦ pozycję.");
   }
 }
 
@@ -2917,7 +2762,8 @@ function prepareNewCutJob(orderId) {
   elements.cutJobForm.reset();
   elements.cutPartForm.reset();
   renderMaterialChips(null);
-  elements.cutJobForm.elements.order_id.value = String(orderId);
+  if (elements.globalCutOrderSelect) elements.globalCutOrderSelect.value = String(orderId);
+  if (elements.cuttingPositionsPanel && orderId) elements.cuttingPositionsPanel.style.display = "block";
   elements.cutJobForm.elements.name.value = `Pozycja ${count}`;
   elements.cutPartForm.elements.quantity.value = "1";
   elements.cutPartForm.querySelector('[name="texture"]').checked = true;
@@ -2928,21 +2774,22 @@ function prepareNewCutJob(orderId) {
 }
 
 async function deleteSelectedCutJob() {
-  if (!state.selectedCutJobId) return showToast("Najpierw kliknij pozycję do usunięcia");
+  if (!state.selectedCutJobId) return showToast("Najpierw kliknij pozycję do usuniĂ„â„˘cia");
   const job = state.cutJobs.find((item) => Number(item.id) === Number(state.selectedCutJobId));
   const label = [job?.order_number, job?.name].filter(Boolean).join(" - ") || `ID ${state.selectedCutJobId}`;
-  if (!confirm(`Usunąć pozycję "${label}" razem z formatkami i wyceną tej pozycji?`)) return;
-  const orderId = Number(elements.cutJobForm.elements.order_id.value || state.selectedOrderId || job?.order_id || 0);
+  if (!confirm(`UsunĂ„â€¦Ă„â€ˇ pozycję "${label}" razem z formatkami i wycenĂ„â€¦ tej pozycji?`)) return;
+  const orderId = Number(elements.globalCutOrderSelect?.value || state.selectedOrderId || job?.order_id || 0);
   await fetchJson(`/api/cut-jobs/${state.selectedCutJobId}`, { method: "DELETE" });
   resetCutJobForm();
   if (orderId) {
-    elements.cutJobForm.elements.order_id.value = String(orderId);
+    if (elements.globalCutOrderSelect) elements.globalCutOrderSelect.value = String(orderId);
+  if (elements.cuttingPositionsPanel && orderId) elements.cuttingPositionsPanel.style.display = "block";
     state.selectedOrderId = orderId;
   }
   await refreshCutting();
   await refreshCrm();
   await refreshPricing();
-  showToast("Pozycja usunięta");
+  showToast("Pozycja usuniĂ„â„˘ta");
 }
 
 function prepareNextCutPartRow(selectedMaterialId) {
@@ -2999,20 +2846,22 @@ function fillCutJobForm(id) {
 async function importCutTextFromPhoto(event) {
   const file = event.target.files[0];
   if (!file) return;
-  elements.cutTextImportStatus.textContent = "Czytam zdjęcie...";
+  elements.cutTextImportStatus.textContent = "Czytam zdjĂ„â„˘cie...";
   const form = new FormData();
   form.append("photo", file);
   try {
     const result = await fetchJson("/api/ocr/cut-text", { method: "POST", body: form });
     elements.cutTextImport.value = result.text || "";
+    const count = parseCutTextRows(result.text || "").length;
+    const sourceLabel = result.source === "gemini" ? "AI Vision" : "OCR";
+    const warningText = Array.isArray(result.warnings) && result.warnings.length ? ` ${result.warnings.join(" ")}` : "";
     elements.cutTextImportStatus.textContent = result.text
-      ? "Tekst ze zdjęcia gotowy do sprawdzenia"
-      : "Nie znaleziono tekstu na zdjęciu";
-    showToast("Tekst ze zdjęcia wstawiony do pola");
-    if (result.text) updateCutTextImportStatus();
+      ? `${sourceLabel}: znaleziono ${count} formatek do sprawdzenia.${warningText}`
+      : "Nie znaleziono tekstu na zdjĂ„â„˘ciu";
+    showToast("Tekst ze zdjĂ„â„˘cia wstawiony do pola");
   } catch (error) {
-    elements.cutTextImportStatus.textContent = error.message || "Nie udało się odczytać zdjęcia";
-    showToast("Nie udało się odczytać zdjęcia");
+    elements.cutTextImportStatus.textContent = error.message || "Nie udaÄąâ€šo siĂ„â„˘ odczytaĂ„â€ˇ zdjĂ„â„˘cia";
+    showToast("Nie udaÄąâ€šo siĂ„â„˘ odczytaĂ„â€ˇ zdjĂ„â„˘cia");
   } finally {
     event.target.value = "";
   }
@@ -3030,28 +2879,9 @@ function updateCutTextImportStatus() {
     : "Tekst jest odczytany, ale nie widze prostych formatek D x S";
 }
 
-function parseCutTextRows(text) {
-  // Wymuś nowe linie przed każdym wymiarem, jeśli skaner złączył je w jedną linię
-  const normalizedText = text.replace(/(.)(\b\d+(?:[,.]\d+)?\s*[xX]\s*\d+(?:[,.]\d+)?\b)/g, (match, p1, p2) => {
-    if (p1 === '\n' || p1 === '\r') return match;
-    return `${p1}\n${p2}`;
-  });
-
-  let color = (normalizedText.match(/kolor\s*:\s*([^\n\r]+)/i)?.[1] || "").trim();
-  color = color.replace(/\s*Pr\s*=.*$/i, "").replace(/,.*$/, "").trim(); // Usuń śmieci po kolorze
-  const isLacqueredFront = /fronty\s+lakierowane/i.test(normalizedText);
-  const baseName = [isLacqueredFront ? "Front lakierowany" : "", color].filter(Boolean).join(" ");
-  const defaultMilling = /\bfrez/i.test(normalizedText);
-
-  return normalizedText
-    .split(/\r?\n/)
-    .map((line) => parseCutTextLineSmart(line, baseName, isLacqueredFront, defaultMilling))
-    .filter(Boolean);
-}
-
 async function importCutPartsFromText() {
   if (!state.selectedCutJobId) {
-    if (!elements.cutJobForm.elements.order_id.value) {
+    if (!elements.globalCutOrderSelect?.value) {
       return showToast("Najpierw wybierz z listy zamówienie (lub zapisz pozycję)");
     }
     // Automatycznie zapisujemy pozycję!
@@ -3069,7 +2899,7 @@ async function importCutPartsFromText() {
     }
     const saved = await postJson("/api/cut-jobs", payload, "POST");
     state.selectedCutJobId = saved.id;
-    showToast("Pozycja została automatycznie zapisana.");
+    showToast("Pozycja zostaÄąâ€ša automatycznie zapisana.");
   }
 
   const text = elements.cutTextImport.value || "";
@@ -3105,73 +2935,6 @@ function buildCutTextBasePayload() {
 }
 
 
-
-function parseCutTextLineSmart(line, baseName, isLacqueredFront, defaultMilling = false) {
-  const normalizedLine = String(line || "")
-    .replace(/[×*]/g, "x")
-    .replace(/\b[zż]t\b/gi, "szt")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/^[^\d]+/, "");
-  const match = normalizedLine.match(/^\s*(\d+(?:[,.]\d+)?)\s*[xX]\s*(\d+(?:[,.]\d+)?)(?:\s*(?:sztuk|szt\.?|szt|pcs)\s*(\d+(?:[,.]\d+)?))?(.*)$/i);
-  if (!match) return null;
-  const length = parseImportedNumber(match[1]);
-  const width = parseImportedNumber(match[2]);
-  let tail = String(match[4] || "").trim();
-  let quantity = parseImportedNumber(match[3] || "1");
-  if (!match[3]) {
-    const looseQuantity = tail.match(/^[\s\-–—(]*(\d+(?:[,.]\d+)?)[)\s]*(.*)$/);
-    if (looseQuantity) {
-      quantity = parseImportedNumber(looseQuantity[1]);
-      tail = looseQuantity[2].trim();
-    }
-  }
-  if (!length || !width || !quantity) return null;
-  const description = [tail, baseName].filter(Boolean).join(" | ");
-  return {
-    length,
-    width,
-    quantity,
-    name: baseName || tail || "",
-    description,
-    work_milling: defaultMilling || /\bfrez/i.test(tail),
-    work_drilling: /wierc/i.test(tail),
-    work_lacquer: isLacqueredFront || /lakier/i.test(tail)
-  };
-}
-
-function parseCutTextLine(line, baseName, isLacqueredFront, defaultMilling = false) {
-  const match = String(line || "").match(/^\s*(\d+(?:[,.]\d+)?)\s*[xX×]\s*(\d+(?:[,.]\d+)?)(?:\s*(?:sztuk|szt\.?|szt|pcs)\s*(\d+(?:[,.]\d+)?))?(.*)$/i);
-  if (!match) return null;
-  const length = parseImportedNumber(match[1]);
-  const width = parseImportedNumber(match[2]);
-  let tail = String(match[4] || "").trim();
-  let quantity = parseImportedNumber(match[3] || "1");
-  if (!match[3]) {
-    const looseQuantity = tail.match(/^-?\s*(\d+(?:[,.]\d+)?)\b(.*)$/);
-    if (looseQuantity) {
-      quantity = parseImportedNumber(looseQuantity[1]);
-      tail = looseQuantity[2].trim();
-    }
-  }
-  if (!length || !width || !quantity) return null;
-  const description = [tail, baseName].filter(Boolean).join(" | ");
-  return {
-    length,
-    width,
-    quantity,
-    name: baseName || tail || "",
-    description,
-    work_milling: defaultMilling || /\bfrez/i.test(tail),
-    work_drilling: /wierc/i.test(tail),
-    work_lacquer: isLacqueredFront || /lakier/i.test(tail)
-  };
-}
-
-function parseImportedNumber(value) {
-  const number = Number(String(value || "").replace(",", "."));
-  return Number.isFinite(number) ? number : 0;
-}
 
 function formPayload(form) {
   const data = new FormData(form);
@@ -3212,6 +2975,7 @@ async function fetchJson(url, options = {}) {
 async function setSelectedPaymentStatus(status) {
   if (!state.selectedOrderId) return showToast("Najpierw kliknij zamówienie");
   await postJson(`/api/orders/${state.selectedOrderId}/payment-status`, { payment_status: status });
+  await prepareNotification(state.selectedOrderId);
   await refreshCrm();
   showToast(`Status płatności: ${status}`);
 }
@@ -3227,7 +2991,7 @@ async function showRemainderLogs() {
   const logs = await fetchJson("/api/integration/remainder-logs");
   elements.remainderLogs.textContent = logs.length
     ? logs.map((log) => `${log.created_at} ${log.event_type} ${log.result_json}\n${log.body}`).join("\n\n")
-    : "Brak żądań z GibLab do naszej aplikacji. To znaczy, że GibLab nie wysłał danych na http://localhost:3080/giblab/remainders.";
+    : "Brak ÄąÄ˝Ă„â€¦daÄąâ€ž z GibLab do naszej aplikacji. To znaczy, ÄąÄ˝e GibLab nie wysÄąâ€šaÄąâ€š danych na http://localhost:3080/giblab/remainders.";
 }
 
 async function copyRemaindersUrl() {
@@ -3273,7 +3037,7 @@ function paymentStatusClass(status) {
   if (normalized.includes("po terminie")) return "payment-overdue";
   if (normalized.includes("zaliczka")) return "payment-deposit";
   if (normalized.includes("oplacone") || normalized.includes("opłacone")) return "payment-paid";
-  if (normalized.includes("nie zaplacone") || normalized.includes("nie zapłacone")) return "payment-unpaid";
+  if (normalized.includes("nie zaplacone") || normalized.includes("nie zapÄąâ€šacone")) return "payment-unpaid";
   return "";
 }
 
@@ -3345,4 +3109,45 @@ function escapeHtml(value) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+// CNC Reports Logic
+const elsCnc = {
+  refreshCncReportsBtn: document.getElementById('refreshCncReportsBtn'),
+  cncReportsBody: document.getElementById('cncReportsBody')
+};
+
+async function loadCncReports() {
+  if (!elsCnc.cncReportsBody) return;
+  const reports = await fetchJson('/api/cnc/reports');
+  elsCnc.cncReportsBody.innerHTML = reports.map(r => `
+    <tr>
+      <td>${escapeHtml(r.created_at || '')}</td>
+      <td>${escapeHtml(r.worker_name || '')}</td>
+      <td>${escapeHtml(r.job_name || 'ID: ' + r.cut_job_id)}</td>
+      <td>${escapeHtml(r.error_type || '')}</td>
+      <td>${escapeHtml(r.description || '')}</td>
+    </tr>
+  `).join('');
+}
+
+if (elsCnc.refreshCncReportsBtn) {
+  elsCnc.refreshCncReportsBtn.addEventListener('click', loadCncReports);
+}
+
+document.querySelectorAll('.tab').forEach(button => {
+  button.addEventListener('click', () => {
+    if (button.dataset.tab === 'cnc_reports') {
+      loadCncReports();
+    }
+  });
+});
+
+
+function renderCutOrderSelect() {
+  const select = elements.globalCutOrderSelect;
+  if (!select) return;
+  const currentValue = select.value || (state.selectedOrderId ? String(state.selectedOrderId) : "");
+  select.innerHTML = '<option value="">Wybierz zamówienie</option>' + state.orders.map((order) => `<option value="${order.id}">${order.order_number} - ${order.customer_name} - ${order.title}</option>`).join('');
+  select.value = currentValue;
 }

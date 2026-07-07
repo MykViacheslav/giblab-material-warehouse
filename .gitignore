@@ -2,6 +2,8 @@ node_modules/
 tmp/
 *.log
 npm-debug.log*
+.env
+.env.local
 
 # Local runtime data. Keep customer/order/stock data on the machine unless exported intentionally.
 data/

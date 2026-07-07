@@ -1,4 +1,4 @@
-﻿import express from "express";
+import express from "express";
 import multer from "multer";
 import { DatabaseSync } from "node:sqlite";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
@@ -269,6 +269,7 @@ db.exec(`
     status TEXT NOT NULL DEFAULT 'Robocze',
     source_file TEXT DEFAULT '',
     export_path TEXT DEFAULT '',
+    operation_type TEXT DEFAULT 'CN',
     project_path TEXT DEFAULT '',
     notes TEXT DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -294,11 +295,27 @@ db.exec(`
     work_drilling INTEGER NOT NULL DEFAULT 0,
     work_lacquer INTEGER NOT NULL DEFAULT 0,
     work_other INTEGER NOT NULL DEFAULT 0,
-    description TEXT DEFAULT '',
-    sort_order INTEGER DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  );
-`);
+      description TEXT DEFAULT '',
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS workers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS cnc_reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      cut_job_id INTEGER REFERENCES cut_jobs(id) ON DELETE CASCADE,
+      worker_name TEXT NOT NULL,
+      error_type TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
 
 ensureColumn("orders", "payment_status_manual", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("customers", "deleted_at", "TEXT DEFAULT ''");
@@ -324,7 +341,12 @@ ensureColumn("offcuts", "reserved_project", "TEXT DEFAULT ''");
 ensureColumn("offcuts", "source_station", "TEXT DEFAULT ''");
 ensureColumn("offcuts", "used_by", "TEXT DEFAULT ''");
 ensureColumn("offcuts", "used_at", "TEXT DEFAULT ''");
-normalizeExistingTextValues();
+  ensureColumn("cut_jobs", "assigned_worker", "TEXT DEFAULT ''");
+  ensureColumn("cut_jobs", "priority", "INTEGER DEFAULT 0");
+  ensureColumn("cut_jobs", "cnc_status", "TEXT DEFAULT 'W kolejce'");
+  ensureColumn("cut_jobs", "started_at", "TEXT DEFAULT ''");
+  ensureColumn("cut_jobs", "completed_at", "TEXT DEFAULT ''");
+  normalizeExistingTextValues();
 seedDefaultPriceItems();
 seedDefaultOffcutStorageLocations();
 try {
@@ -960,6 +982,9 @@ app.get("/api/orders/next-number", (request, response) => {
 
 app.post("/api/orders", (request, response) => {
   const payload = normalizeOrder(request.body);
+  if (payload.payment_status !== "Nie zapłacone") {
+    payload.payment_status_manual = 1;
+  }
   const orderNumber = payload.order_number || nextOrderNumber();
   const result = db.prepare(`
     INSERT INTO orders (order_number, customer_id, title, project_path, order_date, due_date, production_status, payment_status, total_amount, notes)
@@ -1756,6 +1781,131 @@ function handleGibLabRemainders(request, response, type, body) {
   logIntegration("giblab", "unknown", request.headers, body, { type, fallbackType });
   return handleGibLabRemainders(request, response, fallbackType, body);
 }
+
+// --- CNC API ENDPOINTS ---
+
+app.get("/api/workers", (req, res) => {
+  res.json(db.prepare("SELECT * FROM workers ORDER BY name").all());
+});
+
+app.post("/api/workers", (req, res) => {
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: "Name is required" });
+  try {
+    const info = db.prepare("INSERT INTO workers (name) VALUES (?)").run(name.trim());
+    res.json({ id: info.lastInsertRowid, name: name.trim(), active: 1 });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.get("/api/cnc/queue", (req, res) => {
+  const jobs = db.prepare(`
+    SELECT * FROM cut_jobs 
+    WHERE cnc_status IN ('W kolejce', 'W trakcie')
+    ORDER BY priority DESC, created_at ASC
+  `).all();
+  res.json(jobs);
+});
+
+app.post("/api/cnc/job/:id/start", (req, res) => {
+  const { workerName } = req.body;
+  db.prepare("UPDATE cut_jobs SET cnc_status = 'W trakcie', assigned_worker = ?, started_at = CURRENT_TIMESTAMP WHERE id = ?").run(workerName || '', req.params.id);
+  res.json({ success: true });
+});
+
+app.post("/api/cnc/job/:id/complete", (req, res) => {
+  const { usedOffcutIds, workerName } = req.body;
+  db.prepare("UPDATE cut_jobs SET cnc_status = 'Zakończone', completed_at = CURRENT_TIMESTAMP WHERE id = ?").run(req.params.id);
+  
+  if (Array.isArray(usedOffcutIds) && usedOffcutIds.length > 0) {
+    const placeholders = usedOffcutIds.map(() => "?").join(",");
+    db.prepare(`UPDATE offcuts SET status = 'used', used_by = ?, used_at = CURRENT_TIMESTAMP WHERE id IN (${placeholders})`)
+      .run(workerName || '', ...usedOffcutIds);
+  }
+
+  res.json({ success: true });
+});
+
+app.post("/api/cnc/report", (req, res) => {
+  const { cutJobId, workerName, errorType, description } = req.body;
+  db.prepare("INSERT INTO cnc_reports (cut_job_id, worker_name, error_type, description) VALUES (?, ?, ?, ?)").run(
+    cutJobId || null, workerName || '', errorType || '', description || ''
+  );
+  res.json({ success: true });
+});
+
+app.get("/api/cnc/reports", (req, res) => {
+  const reports = db.prepare(`
+    SELECT r.*, c.name as job_name 
+    FROM cnc_reports r 
+    LEFT JOIN cut_jobs c ON r.cut_job_id = c.id 
+    ORDER BY r.created_at DESC
+  `).all();
+  res.json(reports);
+});
+
+app.get("/api/cnc/offcuts/:id", (req, res) => {
+  const offcut = db.prepare("SELECT * FROM offcuts WHERE id = ?").get(req.params.id);
+  if (!offcut) return res.status(404).json({ error: "Nie znaleziono resztki o podanym ID" });
+  res.json(offcut);
+});
+
+app.get("/api/cnc/materials/:jobId", (req, res) => {
+  const jobId = Number(req.params.jobId);
+  const job = db.prepare("SELECT * FROM cut_jobs WHERE id = ?").get(jobId);
+  if (!job) return res.status(404).json({ error: "Job not found" });
+  
+  let offcuts = [];
+  if (job.project_path) {
+    const xmlPath = path.join("C:\\GibLabLocal\\projects", job.project_path);
+    if (existsSync(xmlPath)) {
+      const xml = readFileSync(xmlPath, "utf8");
+      const dbIds = new Set();
+      const jobNameClean = job.name.trim();
+      const partIds = new Set();
+      for (const m of xml.matchAll(/<good[^>]*typeId="product"[^>]*name="[^"]*"([^>]*|.*?)<\/good>/gi)) {
+        if (m[0].includes('"' + jobNameClean + '"') || m[0].includes(' ' + jobNameClean + '"')) {
+          for (const pm of m[0].matchAll(/<part[^>]*id="([0-9]+)"/gi)) {
+            partIds.add(pm[1]);
+          }
+        }
+      }
+      let unescapedData = "";
+      for (const m of xml.matchAll(/<operation[^>]*data="([^"]+)"/gi)) {
+        unescapedData += m[1].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
+      }
+      const sheetIds = new Set();
+      for (const m of unescapedData.matchAll(/<pattern[^>]*sheet="([0-9]+)"[^>]*>(.*?)<\/pattern>/gi)) {
+        for (const pid of partIds) {
+          if (m[2].includes('part.id="' + pid + '"')) {
+            sheetIds.add(m[1]);
+            break;
+          }
+        }
+      }
+      for (const m of xml.matchAll(/<good[^>]*typeId="sheet"[^>]*>(.*?)<\/good>/gi)) {
+        for (const pm of m[1].matchAll(/<part[^>]*dbId="([^"]+)"[^>]*id="([0-9]+)"/gi)) {
+          if (sheetIds.has(pm[2])) {
+            dbIds.add(pm[1]);
+          }
+        }
+      }
+      const dbIdArr = [...dbIds];
+      if (dbIdArr.length > 0) {
+        const placeholders = dbIdArr.map(() => "?").join(",");
+        offcuts = db.prepare(`SELECT * FROM offcuts WHERE id IN (${placeholders})`).all(...dbIdArr);
+      }
+    }
+  }
+  
+  if (offcuts.length === 0) {
+    offcuts = db.prepare("SELECT * FROM offcuts WHERE status = 'reserved' AND reserved_project = ?").all(job.name);
+  }
+  
+  res.json({ offcuts });
+});
+
 
 app.listen(port, host, () => {
   const visibleHost = host === "0.0.0.0" ? "localhost" : host;
@@ -2602,12 +2752,20 @@ function importRemaindersReport(text, headers, station = "UNKNOWN") {
     const parts = line.split(",").map((part) => part.trim());
     if (parts.length >= 9) {
       const [projectOffcutId, externalId, isSheetOrOffcut, isBusiness, length, width, initialQuantity, usedQuantity, ...projectParts] = parts;
-      const quantity = Math.max(0, Number(initialQuantity || 0) - Number(usedQuantity || 0));
-      if (!quantity) continue;
-      const parsedLength = Number(length || 0);
-      const parsedWidth = Number(width || 0);
-      insert.run(
-        externalId || projectOffcutId,
+        const quantity = Math.max(0, Number(initialQuantity || 0) - Number(usedQuantity || 0));
+        const parsedLength = Number(length || 0);
+        const parsedWidth = Number(width || 0);
+        const uniqueId = externalId || `${code}-${projectParts[0] || projectNameHeader}-${projectOffcutId}`;
+
+        if (quantity === 0) {
+          if (externalId) {
+            db.prepare(`UPDATE offcuts SET status = 'used', used_by = ?, used_at = CURRENT_TIMESTAMP WHERE id = ?`).run(normalizeStationName(station), externalId);
+          }
+          continue;
+        }
+
+        insert.run(
+          uniqueId,
         null,
         code,
         parsedLength,
@@ -2788,10 +2946,7 @@ function polishUnit(unit) {
 
 function normalizePaymentStatus(value) {
   const raw = String(value || "").trim();
-  const normalized = raw
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "");
+  const normalized = raw.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   if (normalized === "nie zaplacone" || normalized === "niezaplacone" || normalized === "unpaid") return "Nie zapłacone";
   if (normalized === "zaliczka" || normalized === "deposit") return "Zaliczka";
   if (normalized === "oplacone" || normalized === "paid") return "Opłacone";
@@ -2808,8 +2963,8 @@ function ensureColumn(tableName, columnName, definition) {
 
 function normalizeExistingTextValues() {
   const fixes = [
-    ["orders", "payment_status", "Nie zapłacone", ["Nie zap\u0139\u201aacone", "Nie zap?acone", "Nie zaplacone"]],
-    ["orders", "payment_status", "Opłacone", ["Op\u0139\u201aacone", "Op?acone", "Oplacone"]],
+    ["orders", "payment_status", "Nie zapłacone", ["Nie zap\u0139\u201aacone", "Nie zapłacone", "Nie zaplacone"]],
+    ["orders", "payment_status", "Opłacone", ["Op\u0139\u201aacone", "Opłacone", "Oplacone"]],
     ["orders", "production_status", "Zamknięte", ["Zamkni\u00c4\u2122te", "Zamkniete"]],
     ["payments", "method", "Gotówka", ["Got\u0102\u0142wka", "Got?wka", "Gotowka"]]
   ];
@@ -3023,12 +3178,16 @@ function updateOrderTotalFromQuote(orderId) {
 function buildReadyMessage(order, customer) {
   const greeting = customer?.name ? `Dzień dobry, ${customer.name}.` : "Dzień dobry.";
   const balance = Number(order.balance || 0);
-  const paymentLine = balance > 0
-    ? `Do zapłaty pozostało: ${balance.toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} zł.`
-    : "Płatność jest rozliczona.";
+  let paymentLine = "";
+  if (balance > 0) {
+    paymentLine = `Do zapłaty pozostało: ${balance.toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} zł.`;
+  } else if (order.payment_status === "Nie zapłacone") {
+    paymentLine = "Płatność do uregulowania przy odbiorze.";
+  } else {
+    paymentLine = "Płatność jest rozliczona.";
+  }
   return `${greeting} Zamówienie ${order.order_number} (${order.title}) jest gotowe do odbioru. ${paymentLine}`;
 }
-
 function normalizePhone(phone) {
   const digits = String(phone || "").replace(/[^\d+]/g, "");
   if (!digits) return "";
