@@ -1,0 +1,986 @@
+﻿<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Magazyn materiałów GibLab</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="app-body">
+      <aside class="main-sidebar">
+        <div class="sidebar-brand">
+          <h1>Magazyn GibLab</h1>
+        </div>
+        <div class="nav-menu">
+          <button class="tab" data-tab="dashboard">Dashboard</button>
+          <button class="tab" data-tab="customers">Klienci</button>
+          <button class="tab" data-tab="orders">Zamówienia</button>
+          <button class="tab" data-tab="calendar">Kalendarz</button>
+          <button class="tab" data-tab="pricing">Wycena</button>
+          <button class="tab" data-tab="cutting">Formatki</button>
+          <button class="tab active" data-tab="materials">Materiały</button>
+          <button class="tab" data-tab="stock">Stany</button>
+          <button class="tab" data-tab="deliveries">Dostawy</button>
+          <button class="tab" data-tab="purchase">Zakupy</button>
+          <button class="tab" data-tab="offcuts">Resztki</button>
+          <button class="tab" data-tab="backup">Backup</button>
+          <button class="tab" data-tab="project">Import .project</button>
+        </div>
+      </aside>
+
+      <div class="main-wrapper">
+        <header class="topbar">
+          <div class="topbar-right actions">
+            <button id="importDefaultBtn" class="secondary">Import GibLab</button>
+            <button id="polishCatalogBtn" class="secondary">Spolszcz</button>
+            <label class="file-button secondary">
+              Plik XLS
+              <input id="goodsFile" type="file" accept=".xls,.xlsx">
+            </label>
+            <button id="exportBtn" class="secondary">Test Eksport</button>
+            <button id="exportGiblabBtn" class="secondary">Zapisz do GibLab</button>
+          </div>
+        </header>
+
+        <main class="layout">
+      <button id="showTreeBtn" class="show-tree-btn" type="button" title="Pokaż kategorie">Kategorie</button>
+      <aside class="panel tree-panel">
+        <div class="panel-title tree-title">
+          <span>Kategorie</span>
+          <button id="hideTreeBtn" class="small secondary tree-panel-toggle" type="button">Ukryj</button>
+        </div>
+        <div id="tree" class="tree"></div>
+      </aside>
+
+      <section class="panel content-panel">
+        <section id="dashboardTab" class="tab-page">
+          <div id="dashboardCards" class="dashboard-grid"></div>
+          <div class="dashboard-columns">
+            <div class="dashboard-panel" data-dashboard-panel="today">
+              <button class="dashboard-panel-tab" type="button" data-dashboard-target="today">Praca na dzisiaj</button>
+              <div class="table-wrap dashboard-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Termin</th>
+                      <th>Zamówienie</th>
+                      <th>Klient</th>
+                      <th>Pozycje</th>
+                      <th>m2</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashboardTodayBody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="dashboard-panel" data-dashboard-panel="stock">
+              <button class="dashboard-panel-tab" type="button" data-dashboard-target="stock">Braki / stan magazynu</button>
+              <div class="table-wrap dashboard-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Kod</th>
+                      <th>Nazwa</th>
+                      <th>Stan</th>
+                      <th>Potrzeba</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashboardStockBody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="dashboard-panel" data-dashboard-panel="payments">
+              <button class="dashboard-panel-tab" type="button" data-dashboard-target="payments">Płatności</button>
+              <div class="table-wrap dashboard-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Zamówienie</th>
+                      <th>Klient</th>
+                      <th>Płatność</th>
+                      <th>Saldo</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashboardPaymentsBody"></tbody>
+                </table>
+              </div>
+            </div>
+        </section>
+
+        <section id="customersTab" class="tab-page">
+          <form id="customerForm" class="grid-form">
+            <input name="name" placeholder="Nazwa klienta" required>
+            <input name="phone" placeholder="Telefon">
+            <input name="email" placeholder="Email">
+            <input name="tax_id" placeholder="NIP">
+            <input name="address" placeholder="Adres">
+            <input name="notes" placeholder="Uwagi">
+            <button type="submit">Zapisz klienta</button>
+            <button id="clearCustomerBtn" type="button">Wyczyść</button>
+          </form>
+          <div class="selection-actions">
+            <button id="editSelectedCustomerBtn" class="outline-action" type="button">EDYTUJ</button>
+            <button id="deleteSelectedCustomerBtn" class="outline-action danger-outline" type="button">USUŃ</button>
+          </div>
+          <div class="table-wrap compact-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Nazwa</th>
+                  <th>Telefon</th>
+                  <th>Email</th>
+                  <th>NIP</th>
+                  <th>Adres</th>
+                  <th>Nieopłacone</th>
+                  <th>Saldo</th>
+                </tr>
+              </thead>
+              <tbody id="customersBody"></tbody>
+            </table>
+          </div>
+          <div class="selection-actions">
+            <button id="deleteSelectedCustomerDocsBtn" class="outline-action danger-outline" type="button">USUŃ ZAZNACZONE MOŻLIWE</button>
+            <button id="deleteSelectedCustomerOrderBundleBtn" class="outline-action danger-outline" type="button">USUŃ KOMPLET ZAMÓWIENIA</button>
+            <span id="customerDocsStatus" class="hint"></span>
+          </div>
+          <div class="table-wrap compact-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Wybierz</th>
+                  <th>Typ</th>
+                  <th>Dokument</th>
+                  <th>Powiązanie</th>
+                  <th>Wartość</th>
+                  <th>Można usunąć</th>
+                  <th>Blokady</th>
+                  <th>Akcje</th>
+                </tr>
+              </thead>
+              <tbody id="customerDocsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="ordersTab" class="tab-page">
+          <div class="split-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+            <div class="order-form-panel" style="border: 1px solid var(--border-color); padding: 15px; border-radius: 8px; background: var(--panel-bg);">
+              <h3 style="margin-top: 0; color: var(--accent-color);">Dane zamówienia</h3>
+              <form id="orderForm" class="grid-form order-grid">
+              <input name="order_number" placeholder="Numer automatyczny" readonly title="Numer zamówienia dodaje się automatycznie">
+              <select name="customer_id" required></select>
+              <input name="title" placeholder="Nazwa zamówienia" required>
+              <input name="project_path" placeholder="Plik .project">
+              <input name="order_date" type="date">
+              <input name="due_date" type="date">
+              <select name="production_status">
+                <option>Nowe</option>
+                <option>Pomiar</option>
+                <option>Projekt</option>
+                <option>Do produkcji</option>
+                <option>W produkcji</option>
+                <option>Gotowe</option>
+                <option>Zamontowane</option>
+                <option>Zamknięte</option>
+              </select>
+              <select name="payment_status">
+                <option>Nie zapłacone</option>
+                <option>Zaliczka</option>
+                <option>Opłacone</option>
+                <option>Po terminie</option>
+              </select>
+              <label class="check"><input name="payment_status_manual" type="checkbox"> Status ręczny</label>
+              <input name="total_amount" placeholder="Wartość">
+              <input name="notes" placeholder="Uwagi">
+              <button type="submit">Zapisz zamówienie</button>
+              <button id="clearOrderBtn" type="button">Wyczyść</button>
+            </form>
+            </div>
+            
+            <div class="payment-form-panel" style="border: 1px solid var(--border-color); padding: 15px; border-radius: 8px; background: var(--panel-bg);">
+              <h3 style="margin-top: 0; color: var(--accent-color);">Wpłaty i rozliczenia</h3>
+              <form id="paymentForm" class="stock-form">
+              <input name="order_id" placeholder="ID zamówienia" required>
+              <input name="amount" placeholder="Kwota wpłaty" required>
+              <input name="payment_date" type="date">
+              <select name="method">
+                <option value="">Metoda</option>
+                <option>Gotówka</option>
+                <option>Przelew</option>
+                <option>Karta</option>
+                <option>BLIK</option>
+              </select>
+              <select id="payerCustomerSelect" name="payer_customer_id">
+                <option value="">Wybierz płacącego</option>
+              </select>
+              <input name="payer_name" placeholder="Kto zapłacił">
+              <input name="received_by" placeholder="Kto przyjął">
+              <input name="note" placeholder="Opis wpłaty">
+              <button type="submit">Dodaj wpłatę</button>
+            </form>
+            </div>
+          </div>
+          
+          <div class="notify-panel">
+            <button id="markPaidBtn" type="button">Oznacz opłacone</button>
+            <button id="markUnpaidBtn" type="button">Oznacz nie zapłacone</button>
+            <button id="notifySmsBtn" type="button">SMS</button>
+            <button id="notifyWhatsappBtn" type="button">WhatsApp</button>
+            <button id="notifyTelegramBtn" type="button">Telegram</button>
+            <button id="notifyEmailBtn" type="button">Email</button>
+            <button id="newOrderBtn" type="button">Nowe zamówienie</button>
+            <button id="addOrderPositionBtn" type="button">Dodaj pozycję</button>
+            <button id="goToOrderCuttingBtn" type="button">Przejdź do zamówienia</button>
+            <textarea id="notifyText" readonly placeholder="Kliknij zamówienie, aby przygotować wiadomość do klienta."></textarea>
+          </div>
+
+          <div class="selection-actions">
+            <button id="editSelectedOrderBtn" class="outline-action" type="button">EDYTUJ</button>
+            <button id="deleteSelectedOrderBtn" class="outline-action danger-outline" type="button">USUŃ</button>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Numer</th>
+                  <th>Klient</th>
+                  <th>Zamówienie</th>
+                  <th>Termin</th>
+                  <th>Status</th>
+                  <th>Płatność</th>
+                  <th>Wartość</th>
+                  <th>Wpłacono</th>
+                  <th>Saldo</th>
+                </tr>
+              </thead>
+              <tbody id="ordersBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="calendarTab" class="tab-page">
+          <div class="calendar-summary" id="calendarSummary"></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Dzień</th>
+                  <th>Zamówienia</th>
+                  <th>Pozycje</th>
+                  <th>Formatki</th>
+                  <th>m2</th>
+                  <th>Nie zapłacone</th>
+                  <th>Wartość</th>
+                  <th>Opis pracy</th>
+                </tr>
+              </thead>
+              <tbody id="calendarBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="pricingTab" class="tab-page">
+          <div class="pricing-layout">
+            <div>
+              <h2>Cennik</h2>
+              <form id="priceItemForm" class="stock-form quote-form">
+                <input name="category" placeholder="Kategoria, np. Płyty">
+                <input name="code" placeholder="Kod usługi/towaru">
+                <input name="name" placeholder="Nazwa pozycji" required>
+                <input name="unit" placeholder="J.m., np. m², mb, szt.">
+                <input name="unit_price" placeholder="Cena jednostkowa" required>
+                <button type="submit">Zapisz w cenniku</button>
+                <button id="clearPriceItemBtn" type="button">Nowa cena</button>
+              </form>
+              <div class="selection-actions">
+                <button id="editSelectedPriceBtn" class="outline-action" type="button">EDYTUJ</button>
+                <button id="deleteSelectedPriceBtn" class="outline-action danger-outline" type="button">USUŃ</button>
+              </div>
+              <div class="table-wrap quote-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Kategoria</th>
+                      <th>Kod</th>
+                      <th>Nazwa</th>
+                      <th>J.m.</th>
+                      <th>Cena</th>
+                    </tr>
+                  </thead>
+                  <tbody id="priceItemsBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div>
+              <h2>Wycena zamówienia</h2>
+              <form id="quoteLineForm" class="stock-form quote-form">
+                <select name="order_id" required></select>
+                <select name="price_item_id"></select>
+                <input name="description" placeholder="Opis pozycji">
+                <input name="quantity" placeholder="Ilość / metry / m²" required>
+                <input name="unit" placeholder="J.m.">
+                <input name="unit_price" placeholder="Cena jednostkowa">
+                <button type="submit">Dodaj do wyceny</button>
+              </form>
+              <div class="quote-calculator">
+                <input id="calcLength" placeholder="Długość mm">
+                <input id="calcWidth" placeholder="Szerokość mm">
+                <input id="calcCount" placeholder="Szt." value="1">
+                <button id="calcAreaBtn" type="button">Policz m²</button>
+                <button id="calcLinearBtn" type="button">Policz mb</button>
+                <span class="hint">m² = długość × szerokość × szt. / 1 000 000; mb = długość × szt. / 1000.</span>
+              </div>
+              <div id="quoteSummary" class="quote-summary">Wybierz zamówienie, żeby policzyć wycenę.</div>
+              <div class="table-wrap quote-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Opis</th>
+                      <th>Ilość</th>
+                      <th>J.m.</th>
+                      <th>Cena</th>
+                      <th>Razem</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="quoteLinesBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="cuttingTab" class="tab-page">
+          <div class="toolbar-row">
+            <label class="file-button">
+              Import formatek Excel
+              <input id="cutExcelFile" type="file" accept=".xls,.xlsx,.csv">
+            </label>
+            <button id="exportCutExcelBtn" type="button">Wyślij do GibLab (.project)</button>
+            <button id="importExportedProjectBtn" type="button">Odbierz wynik .project</button>
+            <input id="cutProjectFile" type="file" accept=".project,.xml" hidden>
+            <button id="quoteCutJobBtn" type="button">Wyceń formatki</button>
+            <button id="cutTextImportToggleBtn" type="button">Import tekst / zdjęcie</button>
+            <span id="cutStatus" class="hint"></span>
+          </div>
+
+          <form id="cutJobForm" class="grid-form order-grid" style="margin-bottom: 15px;">
+              <select name="order_id" style="display:none;"></select>
+              <input name="name" placeholder="Nazwa pozycji, np. Pozycja 1" required>
+              
+              <select name="operation_type" title="Typ operacji">
+                 <option value="O">(O) Inne działania</option>
+                 <option value="CS">(CS) Rozkrój płytowy</option>
+                 <option value="CN" selected>(CN) Nesting</option>
+                 <option value="CL">(CL) Rozkrój profili</option>
+                 <option value="EL">(EL) Oklejanie</option>
+                 <option value="SP">(SP) Obróbka pow.</option>
+                 <option value="GR">(GR) Rowkowanie</option>
+                 <option value="XNC">(XNC) Obróbka</option>
+                 <option value="LB">(LB) Etykiety</option>
+              </select>
+
+              <select name="status">
+                <option>Robocze</option>
+                <option>Zaimportowane formatki</option>
+                <option>Wyeksportowane do GibLab</option>
+                <option>Wynik z GibLab zaimportowany</option>
+              </select>
+
+              <input id="cutJobMaterialSearch" class="cut-material-search" placeholder="Szukaj płyty">
+              <select id="cutJobProducerFilter" class="cut-filter-select"></select>
+              <select id="cutJobThicknessFilter" class="cut-filter-select"></select>
+              <select name="material_id" class="cut-material-select"></select>
+              <input name="material_name" placeholder="Płyta z Excela">
+              
+              <input id="cutJobEdgeMaterialSearch" class="cut-material-search" placeholder="Szukaj okleiny">
+              <select name="edge_material_id" class="cut-material-select"></select>
+              <input name="edge_material_name" placeholder="Okleina z Excela">
+              
+              <input name="notes" placeholder="Notatki">
+              
+              <div class="actions" style="grid-column: 1 / -1; justify-content: flex-start; margin-top: 5px;">
+                <button type="submit">Zapisz pozycję</button>
+                <button id="newCutJobBtn" type="button">Nowa pozycja</button>
+                <button id="deleteCutJobBtn" class="danger" type="button">Usuń pozycję</button>
+                <button id="clearCutJobBtn" type="button">Wyczyść</button>
+              </div>
+            </form>
+
+          <div id="cutTextImportPanel" class="cut-text-import">
+            <textarea id="cutTextImport" placeholder="240 x 450 sztuk 1 frez&#10;1621 x 746 sztuk 1 frez"></textarea>
+            <label class="file-button">
+              Import ze zdjęcia
+              <input id="cutPhotoFile" type="file" accept="image/*">
+            </label>
+            <button id="importCutTextBtn" type="button">Import z tekstu</button>
+            <span id="cutTextImportStatus" class="hint"></span>
+          </div>
+
+          <form id="cutPartForm" class="stock-form cutting-part-form">
+            <input id="cutMaterialSearch" class="cut-material-search" placeholder="Szukaj płyty">
+            <select id="cutProducerFilter" class="cut-filter-select"></select>
+            <select id="cutThicknessFilter" class="cut-filter-select"></select>
+            <select name="material_id" class="cut-material-select"></select>
+            <input name="material_code" class="cut-code-field" placeholder="Kod płyty" readonly>
+            <input name="material_name" class="cut-material-name" placeholder="Płyta">
+
+            <input id="cutEdgeMaterialSearch" class="cut-material-search" placeholder="Szukaj okleiny">
+            <select name="edge_material_id" class="cut-material-select"></select>
+            <input name="edge_material_code" class="cut-code-field" placeholder="Kod okleiny" readonly>
+            <input name="edge_material_name" class="cut-material-name" placeholder="Okleina">
+
+            <input name="thickness" class="cut-short" placeholder="G" readonly>
+            <input name="length" class="cut-number" placeholder="Dł." required>
+            <input name="width" class="cut-number" placeholder="Szer." required>
+            <input name="quantity" class="cut-qty" placeholder="Ilość" value="1">
+            <label class="texture-check"><input name="texture" type="checkbox" value="1" checked> Tekstura</label>
+            <input name="name" class="cut-name-field" placeholder="Nazwa elementu">
+            <div class="edge-checks">
+              <label><input id="edgeAll" type="checkbox"> Oklej wszystko</label>
+              <label><input name="edge_top" type="checkbox" value="1"> OB góra</label>
+              <label><input name="edge_bottom" type="checkbox" value="1"> OH dół</label>
+              <label><input name="edge_left" type="checkbox" value="1"> OL lewa</label>
+              <label><input name="edge_right" type="checkbox" value="1"> OP prawa</label>
+            </div>
+            <input name="description" class="cut-description" placeholder="Opis">
+            <button type="submit">Dodaj formatkę</button>
+          </form>
+
+          <div class="split-tables">
+            <div class="table-wrap quote-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Zamówienie</th>
+                    <th>Klient</th>
+                    <th>Pozycja</th>
+                    <th>Materiał</th>
+                    <th>Status</th>
+                    <th>Szt.</th>
+                    <th>m2 formatek</th>
+                    <th>GibLab ark./m2</th>
+                    <th>Okleina mb</th>
+                  </tr>
+                </thead>
+                <tbody id="cutJobsBody"></tbody>
+              </table>
+            </div>
+            <div class="table-wrap quote-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Lp.</th>
+                    <th>D</th>
+                    <th>S</th>
+                    <th>Ilość</th>
+                    <th>Tkt</th>
+                    <th>OB</th>
+                    <th>OH</th>
+                    <th>OL</th>
+                    <th>OP</th>
+                    <th>Nazwa</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="cutPartsBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="cut-bottom-panel">
+            <div id="cutMaterialChips" class="material-chips"></div>
+            <form id="cutQuoteForm" class="stock-form quote-form">
+              <input name="material_price" placeholder="Cena materiału / m2">
+              <input name="cut_price" placeholder="Cena cięcia / szt.">
+              <input name="edge_price" placeholder="Cena oklejania / mb">
+              <input name="milling_price" placeholder="Cena frezowania / szt.">
+              <input name="drilling_price" placeholder="Cena otworu / szt.">
+              <input name="lacquer_price" placeholder="Cena lakierowania / m2">
+              <input name="other_price" placeholder="Cena innej pracy / szt.">
+              <select name="service_price_item_id" class="service-price-select"></select>
+              <select name="service_price_target" class="service-target-select">
+                <option value="cut_price">Cięcie / szt.</option>
+                <option value="edge_price">Oklejanie / mb</option>
+                <option value="milling_price">Frezowanie / szt.</option>
+                <option value="drilling_price">Otwór / szt.</option>
+                <option value="lacquer_price">Lakierowanie / m2</option>
+                <option value="other_price">Inna praca / szt.</option>
+              </select>
+              <button id="applyServicePriceBtn" type="button">Wstaw cenę z cennika</button>
+              <span id="cutTotals" class="quote-summary">Kliknij zlecenie formatek, żeby zobaczyć metry i wycenę.</span>
+              <button id="addCutQuoteBtn" type="button">Dodaj robociznę/ceny do pozycji</button>
+              <button id="openCutExportFolderBtn" type="button">Pokaż plik importu GibLab</button>
+            </form>
+            <div class="table-wrap cut-quote-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Robocizna / cena</th>
+                    <th>J.m.</th>
+                    <th>Ilość</th>
+                    <th>Cena</th>
+                    <th>Wartość</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="cutQuoteLinesBody"></tbody>
+              </table>
+            </div>
+            <p class="hint margin-top">
+              Eksport do GibLab nie otwiera projektu automatycznie. Kliknij "Wyślij do GibLab Excel", potem w GibLab wybierz "Import z Excel" i wskaż zaznaczony plik z folderu C:\GibLabLocal\projects. Po rozkroju użyj "Importuj wynik rozkroju".
+            </p>
+          </div>
+          </div>
+        </section>
+
+        <section id="materialsTab" class="tab-page active">
+          <form id="materialForm" class="grid-form">
+            <input name="id" placeholder="ID auto" readonly>
+            <input name="paren_id" placeholder="Folder nadrzędny ID">
+            <label class="check"><input name="isfolder" type="checkbox"> Folder</label>
+            <input name="code" placeholder="Kod">
+            <input name="name" placeholder="Nazwa" required>
+            <input name="producer" placeholder="Producent">
+            <input name="decor_code" placeholder="Kod dekoru">
+            <input name="decor_name" placeholder="Nazwa dekoru">
+            <input name="structure" placeholder="Struktura">
+            <select name="material_type">
+              <option value="">Typ materialu</option>
+              <option value="chipboard">Plyta wiorowa</option>
+              <option value="MDF">MDF</option>
+              <option value="HDF">HDF</option>
+              <option value="plywood">Sklejka</option>
+              <option value="edge_band">Obrzeze</option>
+              <option value="HPL">HPL</option>
+              <option value="veneer">Fornir</option>
+              <option value="worktop">Blat</option>
+              <option value="hardware">Okucia</option>
+              <option value="other">Inne</option>
+            </select>
+            <input name="unit" placeholder="Jednostka">
+            <input name="price" placeholder="Cena">
+            <input name="supplier" placeholder="Dostawca">
+            <input name="location" placeholder="Lokalizacja">
+            <input name="min_stock" placeholder="Min. stan">
+            <label class="check"><input name="is_active" type="checkbox" checked> Aktywny</label>
+            <input name="thickness" placeholder="Grubość">
+            <input name="length" placeholder="Długość">
+            <input name="width" placeholder="Szerokość">
+            <button type="submit">Zapisz pozycję</button>
+            <button id="clearFormBtn" type="button">Wyczyść</button>
+            <button id="newMaterialFolderBtn" type="button">Nowy folder</button>
+          </form>
+          <div class="material-filters">
+            <input id="materialSearchFilter" placeholder="Szukaj po kodzie, nazwie, dekorze">
+            <select id="materialProducerFilter">
+              <option value="">Producent: wszyscy</option>
+            </select>
+            <select id="materialThicknessFilter">
+              <option value="">Grubość: wszystkie</option>
+            </select>
+            <select id="materialTypeFilter">
+              <option value="">Typ: wszystkie</option>
+            </select>
+            <button id="clearMaterialFiltersBtn" type="button">Wyczyść filtry</button>
+          </div>
+          <div class="selection-actions">
+            <button id="editSelectedMaterialBtn" class="outline-action" type="button">EDYTUJ</button>
+            <button id="deleteSelectedMaterialBtn" class="outline-action danger-outline" type="button">USUŃ</button>
+          </div>
+
+          <section class="panel compact-panel">
+            <h3>Import katalogu materiałów</h3>
+            <div class="toolbar">
+              <input id="materialImportFile" type="file" accept=".xlsx,.xls,.csv">
+              <select id="materialImportMode">
+                <option value="add_new">Dodaj nowe</option>
+                <option value="update_existing">Aktualizuj istniejące</option>
+                <option value="upsert" selected>Dodaj i aktualizuj</option>
+                <option value="skip_duplicates">Pomiń duplikaty</option>
+              </select>
+              <select id="materialImportFilter">
+                <option value="all">Wszystkie</option>
+                <option value="valid">Poprawne</option>
+                <option value="invalid">Błędne</option>
+                <option value="new">Nowe</option>
+                <option value="existing">Istniejące</option>
+                <option value="duplicate">Duplikaty</option>
+                <option value="warning">Ostrzeżenia</option>
+                <option value="selected">Zaznaczone</option>
+              </select>
+              <button id="materialImportPreviewBtn" type="button">Podgląd importu</button>
+              <button id="materialImportCommitBtn" type="button">Zatwierdź import</button>
+              <button id="materialImportSelectValidBtn" type="button">Zaznacz poprawne</button>
+              <button id="materialImportClearSelectionBtn" type="button">Odznacz wszystko</button>
+            </div>
+            <p id="materialImportSummary" class="hint">Import aktualizuje tylko katalog materiałów. Stany magazynowe i historia stanów nie są zmieniane.</p>
+            <div class="table-wrap compact-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Import</th>
+                    <th>Wiersz</th>
+                    <th>Status</th>
+                    <th>Kod</th>
+                    <th>Nazwa</th>
+                    <th>Producent</th>
+                    <th>Dekor</th>
+                    <th>Str.</th>
+                    <th>G</th>
+                    <th>Uwagi</th>
+                  </tr>
+                </thead>
+                <tbody id="materialImportPreviewBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Nazwa / folder</th>
+                  <th>Kod</th>
+                  <th>Producent</th>
+                  <th>Dekor</th>
+                  <th>Str.</th>
+                  <th>Typ</th>
+                  <th>J.m.</th>
+                  <th>Cena</th>
+                  <th>G</th>
+                  <th>D</th>
+                  <th>S</th>
+                  <th>Min.</th>
+                  <th>Lok.</th>
+                  <th>Akt.</th>
+                </tr>
+              </thead>
+              <tbody id="materialsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="stockTab" class="tab-page">
+          <form id="stockForm" class="stock-form">
+            <select name="event_type">
+              <option value="use_reserved">Zużycie rezerwacji</option>
+              <option value="receive">Przyjęcie</option>
+              <option value="reserve">Rezerwacja</option>
+              <option value="release">Zwolnienie rezerwacji</option>
+              <option value="use">Zużycie</option>
+              <option value="adjust">Korekta stanu</option>
+            </select>
+            <input name="material_id" placeholder="ID materiału" required>
+            <input name="quantity" placeholder="Ilość" required>
+            <input name="note" placeholder="Opis">
+            <button type="submit">Zaksięguj</button>
+          </form>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Kod</th>
+                  <th>Nazwa</th>
+                  <th>Stan</th>
+                  <th>Rezerwacja</th>
+                  <th>Dostępne</th>
+                  <th>Zużyto</th>
+                  <th>Historia</th>
+                  <th>Akcje</th>
+                </tr>
+              </thead>
+              <tbody id="stockBody"></tbody>
+            </table>
+          </div>
+          <div id="stockHistoryPanel" class="stock-history-panel hint"></div>
+        </section>
+
+        <section id="deliveriesTab" class="tab-page">
+          <form id="deliveryForm" class="grid-form">
+            <input name="supplier" placeholder="Dostawca">
+            <input name="document_number" placeholder="Numer WZ / faktury">
+            <input name="delivery_date" type="date">
+            <input name="notes" placeholder="Uwagi">
+            <button type="submit">Zapisz dostawę</button>
+            <button id="newDeliveryBtn" type="button">Nowa dostawa</button>
+            <button id="postDeliveryBtn" type="button">Zaksięguj dostawę</button>
+          </form>
+
+          <form id="deliveryLineForm" class="stock-form">
+            <select name="material_id" required>
+              <option value="">Wybierz materiał</option>
+            </select>
+            <input name="quantity" placeholder="Ilość" required>
+            <input name="unit_price" placeholder="Cena zakupu">
+            <input name="notes" placeholder="Uwagi pozycji">
+            <button type="submit">Dodaj pozycję</button>
+          </form>
+
+          <div class="split-grid">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Data</th>
+                    <th>Dostawca</th>
+                    <th>Dokument</th>
+                    <th>Status</th>
+                    <th>Poz.</th>
+                    <th>Ilość</th>
+                    <th>Wartość</th>
+                  </tr>
+                </thead>
+                <tbody id="deliveriesBody"></tbody>
+              </table>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Kod</th>
+                    <th>Nazwa</th>
+                    <th>Ilość</th>
+                    <th>Cena</th>
+                    <th>Usuń</th>
+                  </tr>
+                </thead>
+                <tbody id="deliveryLinesBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <p id="deliveryStatus" class="hint">Szkic dostawy nie zmienia magazynu. Stan rośnie dopiero po kliknięciu „Zaksięguj dostawę”.</p>
+          <section class="panel compact-panel">
+            <h3>Korekty dostaw</h3>
+            <form id="deliveryCorrectionForm" class="grid-form">
+              <input name="correction_number" placeholder="Numer korekty">
+              <input name="reason" placeholder="Powód korekty" required>
+              <input name="note" placeholder="Uwagi korekty">
+              <button type="submit">Zapisz korektę</button>
+              <button id="newDeliveryCorrectionBtn" type="button">Nowa korekta</button>
+              <button id="postDeliveryCorrectionBtn" type="button">Zaksięguj korektę</button>
+            </form>
+            <form id="deliveryCorrectionLineForm" class="stock-form">
+              <select name="material_id" required>
+                <option value="">Wybierz materiał</option>
+              </select>
+              <input name="quantity_delta" placeholder="Zmiana ilości (+/-)" required>
+              <input name="unit_price_net" placeholder="Cena netto">
+              <input name="note" placeholder="Uwagi pozycji">
+              <button type="submit">Dodaj korektę pozycji</button>
+            </form>
+            <div class="split-grid">
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Dostawa</th>
+                      <th>Numer</th>
+                      <th>Powód</th>
+                      <th>Status</th>
+                      <th>Delta</th>
+                    </tr>
+                  </thead>
+                  <tbody id="deliveryCorrectionsBody"></tbody>
+                </table>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Kod</th>
+                      <th>Nazwa</th>
+                      <th>Delta</th>
+                      <th>Cena</th>
+                      <th>Usuń</th>
+                    </tr>
+                  </thead>
+                  <tbody id="deliveryCorrectionLinesBody"></tbody>
+                </table>
+              </div>
+            </div>
+            <p id="deliveryCorrectionStatus" class="hint">Korekta w szkicu nie zmienia magazynu. Stan zmienia się dopiero po zaksięgowaniu korekty.</p>
+          </section>
+        </section>
+
+        <section id="purchaseTab" class="tab-page">
+          <div class="toolbar-row">
+            <input id="purchaseSearch" placeholder="Szukaj materiału">
+            <select id="purchaseSupplierFilter">
+              <option value="">Dostawca: wszyscy</option>
+            </select>
+            <select id="purchaseProducerFilter">
+              <option value="">Producent: wszyscy</option>
+            </select>
+            <select id="purchaseTypeFilter">
+              <option value="">Typ: wszystkie</option>
+            </select>
+            <button id="refreshPurchaseNeedsBtn" type="button">Odśwież raport</button>
+            <button id="exportPurchaseNeedsCsvBtn" type="button">Eksport CSV</button>
+            <button id="sendPurchaseNeedsTelegramBtn" type="button">Wyślij Telegram</button>
+            <span id="purchaseNeedsSummary" class="hint"></span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Dostawca</th>
+                  <th>Producent</th>
+                  <th>Kod</th>
+                  <th>Nazwa</th>
+                  <th>Dekor</th>
+                  <th>Str.</th>
+                  <th>G</th>
+                  <th>Stan</th>
+                  <th>Rez.</th>
+                  <th>Dostępne</th>
+                  <th>Min.</th>
+                  <th>Zamówić</th>
+                  <th>Lok.</th>
+                </tr>
+              </thead>
+              <tbody id="purchaseNeedsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="offcutsTab" class="tab-page">
+          <div class="toolbar-row">
+            <button id="importLatestProjectBtn" type="button">Importuj najnowszy projekt GibLab</button>
+            <button id="showRemainderLogsBtn" type="button">Sprawdź połączenie GibLab</button>
+            <button id="copyRemaindersUrlBtn" type="button">Kopiuj adres dla GibLab</button>
+            <span id="remainderStatus" class="hint"></span>
+          </div>
+          <p class="hint">Adres dla GibLab do resztek: <code id="remaindersUrlText">http://127.0.0.1:3080/giblab/remainders</code>. W GibLab ten adres musi być wpisany z http:// na początku.</p>
+          <div class="toolbar-row">
+            <input id="offcutStationName" placeholder="Nazwa stanowiska, np. DESKTOP-MQBAC93">
+            <span class="hint">Ta nazwa służy do rezerwacji resztek między komputerami.</span>
+          </div>
+          <form id="offcutForm" class="stock-form">
+            <input name="id" placeholder="ID resztki">
+            <input name="material_id" placeholder="ID materiału">
+            <input name="code" placeholder="Kod">
+            <input name="length" placeholder="Długość" required>
+            <input name="width" placeholder="Szerokość" required>
+            <input name="quantity" placeholder="Ilość">
+            <input name="project_name" placeholder="Projekt">
+            <input name="storage_location" placeholder="Miejsce / regał">
+            <input name="storage_note" placeholder="Uwagi do miejsca">
+            <label class="check"><input name="is_business" type="checkbox"> Delowa</label>
+            <button type="submit">Dodaj resztkę</button>
+          </form>
+          <div class="selection-actions">
+            <button id="assignSelectedOffcutStorageBtn" class="outline-action" type="button">WYZNACZ MIEJSCE</button>
+            <button id="reserveSelectedOffcutBtn" class="outline-action" type="button">REZERWUJ</button>
+            <button id="releaseSelectedOffcutBtn" class="outline-action" type="button">ZWOLNIJ</button>
+            <button id="useSelectedOffcutBtn" class="outline-action" type="button">ZUŻYTO</button>
+            <button id="editSelectedOffcutBtn" class="outline-action" type="button">EDYTUJ</button>
+            <button id="deleteSelectedOffcutBtn" class="outline-action danger-outline" type="button">USUŃ</button>
+          </div>
+          <h3>Reguły regałów</h3>
+          <form id="offcutStorageForm" class="stock-form">
+            <input name="id" placeholder="ID" readonly>
+            <input name="code" placeholder="Kod regału, np. A1" required>
+            <input name="name" placeholder="Nazwa regału">
+            <input name="min_long_side" placeholder="Min. długi bok">
+            <input name="max_long_side" placeholder="Max. długi bok">
+            <input name="min_short_side" placeholder="Min. krótki bok">
+            <input name="max_short_side" placeholder="Max. krótki bok">
+            <input name="sort_order" placeholder="Kolejność">
+            <label class="check"><input name="active" type="checkbox" checked> Aktywny</label>
+            <button type="submit">Zapisz regał</button>
+            <button id="clearOffcutStorageBtn" type="button">Wyczyść</button>
+            <button id="reassignOffcutStorageBtn" type="button">Przelicz wszystkie resztki</button>
+          </form>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Kod</th>
+                  <th>Nazwa</th>
+                  <th>Długi bok</th>
+                  <th>Krótki bok</th>
+                  <th>Kolejność</th>
+                  <th>Aktywny</th>
+                  <th>Akcje</th>
+                </tr>
+              </thead>
+              <tbody id="offcutStorageBody"></tbody>
+            </table>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Kod</th>
+                  <th>D</th>
+                  <th>S</th>
+                  <th>Ilość</th>
+                  <th>Typ</th>
+                  <th>Projekt</th>
+                  <th>Miejsce</th>
+                  <th>Status</th>
+                  <th>Rezerwacja</th>
+                  <th>Stacja</th>
+                </tr>
+              </thead>
+              <tbody id="offcutsBody"></tbody>
+            </table>
+          </div>
+          <pre id="remainderLogs" class="log-panel"></pre>
+        </section>
+
+        <section id="backupTab" class="tab-page">
+          <div class="toolbar-row">
+            <button id="createBackupBtn" type="button">Utwórz backup</button>
+            <button id="refreshBackupsBtn" type="button">Odśwież</button>
+            <span id="backupStatus" class="hint"></span>
+          </div>
+          <p class="hint">Backup zapisuje kopię bazy SQLite w folderze data/backups. Przed przywróceniem program tworzy dodatkową kopię aktualnej bazy.</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Plik</th>
+                  <th>Rozmiar</th>
+                  <th>Data</th>
+                  <th>Akcje</th>
+                </tr>
+              </thead>
+              <tbody id="backupsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="projectTab" class="tab-page">
+          <div class="drop-zone">
+            <input id="projectFile" type="file" accept=".project,.xml">
+            <button id="importProjectBtn">Importuj wynik rozkroju</button>
+          </div>
+          <pre id="projectResult"></pre>
+        </section>
+        </section>
+      </main>
+      </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
