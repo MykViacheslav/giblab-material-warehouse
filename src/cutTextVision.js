@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const DEFAULT_MODEL = "gemini-2.5-flash";
-const MIN_PART_SIDE_MM = 80;
+const MIN_PART_SIDE_MM = 20;
 const MAX_QUANTITY = 99;
 
 export async function readCutTextWithGemini({ buffer, mimeType, apiKey, modelName = DEFAULT_MODEL }) {
@@ -49,13 +49,20 @@ Zadanie:
 4. Ignoruj mikroszkice profili, schodkow (np. wymiary 60 i 2,5 na dole z boku rysunku, ktore nie sa gabarytami plyty), strzalki, kratki, luźne pojedyncze cyfry nic nie znaczace, i pozycje przekreslone.
 5. Jesli przy linii jest napisane "frez", ustaw work_milling: true.
 6. Jesli przy linii jest "bez frezu" itp., ustaw work_milling: false i dodaj to w note.
+7. ZWROC UWAGE NA OKLEJANIE KRAWEDZI! Kreski narysowane bezposrednio pod wymiarami oznaczaja ilosc oklejanych krawedzi:
+   - Pojedyncza kreska pod wymiarem (np. 720 _) oznacza 1 oklejona krawedz (zwroc wartosc 1).
+   - Podwojna kreska lub znak rownosci pod wymiarem (np. 446 =) oznacza 2 oklejone krawedzie (zwroc wartosc 2).
+   - Brak kreski oznacza 0 oklejonych krawedzi (zwroc wartosc 0).
+   Zapisz te wartosci do pol edges_length (dla wymiaru dlugosci) oraz edges_width (dla wymiaru szerokosci). Upewnij sie, ze nie pomylisz kresek miedzy dlugoscia a szerokoscia!
 
 Zwroc wylacznie JSON w formacie:
 {
   "items": [
     {
       "length": 2580,
+      "edges_length": 1,
       "width": 300,
+      "edges_width": 2,
       "quantity": 1,
       "name": "",
       "note": "",
@@ -65,7 +72,9 @@ Zwroc wylacznie JSON w formacie:
     },
     {
       "length": 1316,
+      "edges_length": 0,
       "width": 670,
+      "edges_width": 0,
       "quantity": 1,
       "name": "",
       "note": "skos",
@@ -93,8 +102,10 @@ function parseGeminiJson(text) {
 }
 
 export function normalizeVisionRows(payload) {
-  const items = Array.isArray(payload) ? payload : Array.isArray(payload?.items) ? payload.items : [];
-  const warnings = Array.isArray(payload?.warnings) ? payload.warnings.map(String).filter(Boolean) : [];
+  const source = typeof payload === "string" ? parseGeminiJson(payload) : payload;
+  const items = Array.isArray(source) ? source : Array.isArray(source?.items) ? source.items : Array.isArray(source?.parts) ? source.parts : [];
+  const sourceWarnings = typeof source === "object" && source ? source.warnings : [];
+  const warnings = Array.isArray(sourceWarnings) ? sourceWarnings.map(String).filter(Boolean) : [];
   const rows = [];
 
   for (const item of items) {
@@ -106,10 +117,17 @@ export function normalizeVisionRows(payload) {
       warnings.push(`Pominieto niepewna pozycje: ${JSON.stringify(item)}`);
       continue;
     }
+    const edgesLength = toNumber(item?.edges_length);
+    const edgesWidth = toNumber(item?.edges_width);
+
     rows.push({
       length,
       width,
       quantity,
+      edge_top: edgesLength >= 1,
+      edge_bottom: edgesLength >= 2,
+      edge_left: edgesWidth >= 1,
+      edge_right: edgesWidth >= 2,
       name: cleanText(item?.name),
       note: cleanText(item?.note),
       work_milling: Boolean(item?.work_milling),
@@ -124,12 +142,16 @@ export function normalizeVisionRows(payload) {
 export function rowsToCutText(rows) {
   return rows
     .map((row) => {
+      const edgeD = (row.edge_top ? 1 : 0) + (row.edge_bottom ? 1 : 0);
+      const edgeS = (row.edge_left ? 1 : 0) + (row.edge_right ? 1 : 0);
       const notes = [
         row.work_milling ? "frez" : "",
         row.work_lacquer ? "lakier" : "",
         row.name,
         row.note,
-        row.uncertain ? "sprawdzic" : ""
+        row.uncertain ? "sprawdzic" : "",
+        edgeD > 0 ? `oklD:${edgeD}` : "",
+        edgeS > 0 ? `oklS:${edgeS}` : ""
       ].filter(Boolean);
       return `${formatNumber(row.length)} x ${formatNumber(row.width)} x ${formatNumber(row.quantity)}${notes.length ? ` ${notes.join(" ")}` : ""}`;
     })

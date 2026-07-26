@@ -1,36 +1,520 @@
-﻿import { state } from "./js/state.js";
-import { elements } from "./js/dom.js";
-import { parseCutTextRows } from "./js/cutTextParser.js";
+const state = {
+  flat: [],
+  tree: [],
+  customers: [],
+  orders: [],
+  priceItems: [],
+  cutTechnologyPrices: [],
+  supplies: [],
+  quoteLines: [],
+  cutJobs: [],
+  cutParts: [],
+  cutQuoteLines: [],
+  productionTasks: [],
+  productionStation: "CNC",
+  productionAnalytics: null,
+  productionAnalyticsFilters: { order_id: "", month: "" },
+  deliveries: [],
+  deliveryLines: [],
+  deliveryCorrections: [],
+  deliveryCorrectionLines: [],
+  purchaseNeeds: { rows: [], summary: null },
+  backups: [],
+  materialImportRows: [],
+  offcutStorageLocations: [],
+  customerRelatedDocs: [],
+  selectedId: null,
+  selectedCustomerId: null,
+  editingCustomerId: null,
+  selectedOrderId: null,
+  selectedPriceItemId: null,
+  selectedCutTechnologyPriceId: null,
+  selectedSupplyId: null,
+  selectedOffcutId: null,
+  selectedOffcutStorageLocationId: null,
+  selectedCustomerDocIndex: null,
+  selectedCutJobId: null,
+  selectedCutPartId: null,
+  selectedCutPartIds: new Set(),
+  lastCutPhotoFile: null,
+  highlightedCutPartId: null,
+  selectedDeliveryId: null,
+  selectedDeliveryCorrectionId: null,
+  offcutAutoRefreshTimer: null,
+  offcutRefreshInFlight: false,
+  offcutLastRefreshAt: null,
+  activeDashboardPanel: "today",
+  collapsed: new Set(),
+  materialCollapsed: new Set()
+};
+
+const PRODUCTION_COST_SETTINGS_KEY = "giblabProductionCostSettings";
+const OFFCUT_AUTO_REFRESH_KEY = "giblabOffcutsAutoRefresh";
+const OFFCUT_REFRESH_INTERVAL_KEY = "giblabOffcutsRefreshInterval";
+
+const CUT_ELEMENT_TYPES = [
+  "Front gładki",
+  "Front frezowany",
+  "Front ryflowany / lamele",
+  "Front ramkowy",
+  "Front fornirowany gładki",
+  "Front fornirowany frezowany",
+  "Bok dokładany",
+  "Bok dokładany z zakładką",
+  "Cokół",
+  "Listwa",
+  "Blenda",
+  "Panel dekoracyjny",
+  "Element specjalny",
+  "Inne"
+];
+
+const CUT_TECHNOLOGIES = [
+  "Bez technologii / tylko rozkrój",
+  "Front gładki lakierowany",
+  "Front gładki lakierowany 1 strona",
+  "Front gładki lakierowany 2 strony",
+  "Front frezowany lakierowany",
+  "Front ryflowany lakierowany",
+  "Front ryflowany / lamele",
+  "Front fornirowany gładki",
+  "Front fornirowany frezowany",
+  "Front ramkowy lakierowany",
+  "Bok dokładany lakierowany",
+  "Bok dokładany z zakładką",
+  "Cokół lakierowany",
+  "Listwa lakierowana",
+  "Blenda lakierowana",
+  "Panel dekoracyjny",
+  "Element specjalny",
+  "Technologia specjalna"
+];
+
+const CUT_LACQUER_SIDES = ["brak", "1 strona", "2 strony", "krawędzie", "specjalne"];
+
+const CUT_TECHNOLOGY_TEMPLATES = [
+  {
+    key: "bez_technologii",
+    name: "Bez technologii / tylko rozkrój",
+    element_type: "Inne",
+    technology: "Bez technologii / tylko rozkrój",
+    lacquer_sides: "brak",
+    work_milling: false,
+    work_drilling: false,
+    work_lacquer: false,
+    work_other: false,
+    pricing_unit: "none",
+    default_price_net: 0,
+    label: "TYLKO ROZKRÓJ / BEZ LAKIERU"
+  },
+  {
+    key: "front_gladki_lakier",
+    name: "Front gładki lakierowany 1 strona",
+    element_type: "Front gładki",
+    technology: "Front gładki lakierowany 1 strona",
+    lacquer_sides: "1 strona",
+    work_milling: false,
+    work_drilling: false,
+    work_lacquer: true,
+    work_other: false,
+    pricing_unit: "m2",
+    default_price_net: 350,
+    label: "FRONT GŁADKI / LAKIER / 1 STRONA"
+  },
+  {
+    key: "front_gladki_lakier_2_strony",
+    name: "Front gładki lakierowany 2 strony",
+    element_type: "Front gładki",
+    technology: "Front gładki lakierowany 2 strony",
+    lacquer_sides: "2 strony",
+    work_milling: false,
+    work_drilling: false,
+    work_lacquer: true,
+    work_other: false,
+    pricing_unit: "m2",
+    default_price_net: 650,
+    label: "FRONT GŁADKI / LAKIER / 2 STRONY"
+  },
+  {
+    key: "front_frezowany_lakier",
+    name: "Front frezowany lakierowany",
+    element_type: "Front frezowany",
+    technology: "Front frezowany lakierowany",
+    lacquer_sides: "1 strona",
+    work_milling: true,
+    work_drilling: false,
+    work_lacquer: true,
+    work_other: false,
+    pricing_unit: "m2",
+    default_price_net: 550,
+    label: "FRONT FREZOWANY / LAKIER / FREZ / 1 STRONA"
+  },
+  {
+    key: "front_ryflowany_lamele",
+    name: "Front ryflowany / lamele",
+    element_type: "Front ryflowany / lamele",
+    technology: "Front ryflowany lakierowany",
+    lacquer_sides: "1 strona",
+    work_milling: true,
+    work_drilling: false,
+    work_lacquer: true,
+    work_other: true,
+    pricing_unit: "m2",
+    default_price_net: 750,
+    label: "FRONT RYFLOWANY / LAMELE / LAKIER / FREZ"
+  },
+  {
+    key: "front_fornirowany_gladki",
+    name: "Front fornirowany gładki",
+    element_type: "Front fornirowany gładki",
+    technology: "Front fornirowany gładki",
+    lacquer_sides: "1 strona",
+    work_milling: false,
+    work_drilling: false,
+    work_lacquer: true,
+    work_other: false,
+    pricing_unit: "m2",
+    default_price_net: 600,
+    label: "FRONT FORNIROWANY GŁADKI / LAKIER"
+  },
+  {
+    key: "front_fornirowany_frezowany",
+    name: "Front fornirowany frezowany",
+    element_type: "Front fornirowany frezowany",
+    technology: "Front fornirowany frezowany",
+    lacquer_sides: "1 strona",
+    work_milling: true,
+    work_drilling: false,
+    work_lacquer: true,
+    work_other: false,
+    pricing_unit: "m2",
+    default_price_net: 800,
+    label: "FRONT FORNIROWANY / LAKIER / FREZ"
+  },
+  {
+    key: "front_ramkowy_lakierowany",
+    name: "Front ramkowy lakierowany",
+    element_type: "Front ramkowy",
+    technology: "Front ramkowy lakierowany",
+    lacquer_sides: "1 strona",
+    work_milling: true,
+    work_drilling: false,
+    work_lacquer: true,
+    work_other: true,
+    pricing_unit: "m2",
+    default_price_net: 650,
+    label: "FRONT RAMKOWY / LAKIER / FREZ"
+  },
+  {
+    key: "bok_dokladany",
+    name: "Bok dokładany",
+    element_type: "Bok dokładany",
+    technology: "Bok dokładany lakierowany",
+    lacquer_sides: "1 strona",
+    work_milling: false,
+    work_drilling: false,
+    work_lacquer: true,
+    work_other: false,
+    pricing_unit: "m2",
+    default_price_net: 350,
+    label: "BOK DOKŁADANY / LAKIER"
+  },
+  {
+    key: "bok_dokladany_z_zakladka",
+    name: "Bok dokładany z zakładką",
+    element_type: "Bok dokładany z zakładką",
+    technology: "Bok dokładany z zakładką",
+    lacquer_sides: "specjalne",
+    work_milling: false,
+    work_drilling: false,
+    work_lacquer: true,
+    work_other: true,
+    pricing_unit: "m2",
+    default_price_net: 450,
+    label: "BOK DOKŁADANY Z ZAKŁADKĄ"
+  },
+  {
+    key: "cokol_lakierowany",
+    name: "Cokół lakierowany",
+    element_type: "Cokół",
+    technology: "Cokół lakierowany",
+    lacquer_sides: "1 strona",
+    work_milling: false,
+    work_drilling: false,
+    work_lacquer: true,
+    work_other: false,
+    pricing_unit: "mb",
+    default_price_net: 0,
+    label: "COKÓŁ / LAKIER"
+  },
+  {
+    key: "listwa_lakierowana",
+    name: "Listwa lakierowana",
+    element_type: "Listwa",
+    technology: "Listwa lakierowana",
+    lacquer_sides: "1 strona",
+    work_milling: false,
+    work_drilling: false,
+    work_lacquer: true,
+    work_other: false,
+    pricing_unit: "mb",
+    default_price_net: 0,
+    label: "LISTWA / LAKIER"
+  },
+  {
+    key: "blenda_lakierowana",
+    name: "Blenda lakierowana",
+    element_type: "Blenda",
+    technology: "Blenda lakierowana",
+    lacquer_sides: "1 strona",
+    work_milling: false,
+    work_drilling: false,
+    work_lacquer: true,
+    work_other: false,
+    pricing_unit: "m2",
+    default_price_net: 350,
+    label: "BLENDA / LAKIER"
+  },
+  {
+    key: "panel_dekoracyjny",
+    name: "Panel dekoracyjny",
+    element_type: "Panel dekoracyjny",
+    technology: "Panel dekoracyjny",
+    lacquer_sides: "specjalne",
+    work_milling: false,
+    work_drilling: false,
+    work_lacquer: true,
+    work_other: true,
+    pricing_unit: "m2",
+    default_price_net: 450,
+    label: "PANEL DEKORACYJNY / SPRAWDZIĆ TECHNOLOGIĘ"
+  },
+  {
+    key: "element_specjalny",
+    name: "Element specjalny",
+    element_type: "Element specjalny",
+    technology: "Element specjalny",
+    lacquer_sides: "specjalne",
+    work_milling: false,
+    work_drilling: false,
+    work_lacquer: false,
+    work_other: true,
+    pricing_unit: "szt",
+    default_price_net: 0,
+    label: "ELEMENT SPECJALNY"
+  }
+];
+
+const elements = {
+  layout: document.querySelector(".layout"),
+  tree: document.querySelector("#tree"),
+  hideTreeBtn: document.querySelector("#hideTreeBtn"),
+  showTreeBtn: document.querySelector("#showTreeBtn"),
+  materialsBody: document.querySelector("#materialsBody"),
+  stockBody: document.querySelector("#stockBody"),
+  stockHistoryPanel: document.querySelector("#stockHistoryPanel"),
+  offcutsBody: document.querySelector("#offcutsBody"),
+  customersBody: document.querySelector("#customersBody"),
+  customerDocsBody: document.querySelector("#customerDocsBody"),
+  customerDocsStatus: document.querySelector("#customerDocsStatus"),
+  ordersBody: document.querySelector("#ordersBody"),
+  dashboardCards: document.querySelector("#dashboardCards"),
+  dashboardTodayBody: document.querySelector("#dashboardTodayBody"),
+  dashboardStockBody: document.querySelector("#dashboardStockBody"),
+  dashboardPaymentsBody: document.querySelector("#dashboardPaymentsBody"),
+  calendarBody: document.querySelector("#calendarBody"),
+  calendarSummary: document.querySelector("#calendarSummary"),
+  materialForm: document.querySelector("#materialForm"),
+  quickMaterialFolderForm: document.querySelector("#quickMaterialFolderForm"),
+  quickMaterialForm: document.querySelector("#quickMaterialForm"),
+  materialSearchFilter: document.querySelector("#materialSearchFilter"),
+  materialProducerFilter: document.querySelector("#materialProducerFilter"),
+  materialThicknessFilter: document.querySelector("#materialThicknessFilter"),
+  materialTypeFilter: document.querySelector("#materialTypeFilter"),
+  materialHideLegacyUa: document.querySelector("#materialHideLegacyUa"),
+  clearMaterialFiltersBtn: document.querySelector("#clearMaterialFiltersBtn"),
+  newMaterialFolderBtn: document.querySelector("#newMaterialFolderBtn"),
+  materialImportFile: document.querySelector("#materialImportFile"),
+  materialImportMode: document.querySelector("#materialImportMode"),
+  materialImportFilter: document.querySelector("#materialImportFilter"),
+  materialImportPreviewBtn: document.querySelector("#materialImportPreviewBtn"),
+  materialImportCommitBtn: document.querySelector("#materialImportCommitBtn"),
+  materialImportSelectValidBtn: document.querySelector("#materialImportSelectValidBtn"),
+  materialImportClearSelectionBtn: document.querySelector("#materialImportClearSelectionBtn"),
+  materialImportSummary: document.querySelector("#materialImportSummary"),
+  materialImportPreviewBody: document.querySelector("#materialImportPreviewBody"),
+  materialParentHint: document.querySelector("#materialParentHint"),
+  stockForm: document.querySelector("#stockForm"),
+  hideZeroStock: document.querySelector("#hideZeroStock"),
+  deliveryForm: document.querySelector("#deliveryForm"),
+  deliveryLineForm: document.querySelector("#deliveryLineForm"),
+  deliveryMaterialSearch: document.querySelector("#deliveryMaterialSearch"),
+  deliveryQuantityHint: document.querySelector("#deliveryQuantityHint"),
+  deliveriesBody: document.querySelector("#deliveriesBody"),
+  deliveryLinesBody: document.querySelector("#deliveryLinesBody"),
+  deliveryStatus: document.querySelector("#deliveryStatus"),
+  newDeliveryBtn: document.querySelector("#newDeliveryBtn"),
+  postDeliveryBtn: document.querySelector("#postDeliveryBtn"),
+  deliveryCorrectionForm: document.querySelector("#deliveryCorrectionForm"),
+  deliveryCorrectionLineForm: document.querySelector("#deliveryCorrectionLineForm"),
+  deliveryCorrectionsBody: document.querySelector("#deliveryCorrectionsBody"),
+  deliveryCorrectionLinesBody: document.querySelector("#deliveryCorrectionLinesBody"),
+  deliveryCorrectionStatus: document.querySelector("#deliveryCorrectionStatus"),
+  productionTasksBody: document.querySelector("#productionTasksBody"),
+  productionSummary: document.querySelector("#productionSummary"),
+  productionOperator: document.querySelector("#productionOperator"),
+  refreshProductionBtn: document.querySelector("#refreshProductionBtn"),
+  productionCostsCards: document.querySelector("#productionCostsCards"),
+  productionCostSettingsForm: document.querySelector("#productionCostSettingsForm"),
+  productionUnitCosts: document.querySelector("#productionUnitCosts"),
+  productionTechnologySummaryBody: document.querySelector("#productionTechnologySummaryBody"),
+  productionJobSummaryBody: document.querySelector("#productionJobSummaryBody"),
+  refreshProductionCostsBtn: document.querySelector("#refreshProductionCostsBtn"),
+  productionAnalyticsFilterForm: document.querySelector("#productionAnalyticsFilterForm"),
+  productionAnalyticsOrderFilter: document.querySelector("#productionAnalyticsOrderFilter"),
+  productionAnalyticsMonthFilter: document.querySelector("#productionAnalyticsMonthFilter"),
+  clearProductionAnalyticsFiltersBtn: document.querySelector("#clearProductionAnalyticsFiltersBtn"),
+  productionAnalyticsFilterInfo: document.querySelector("#productionAnalyticsFilterInfo"),
+  newDeliveryCorrectionBtn: document.querySelector("#newDeliveryCorrectionBtn"),
+  postDeliveryCorrectionBtn: document.querySelector("#postDeliveryCorrectionBtn"),
+  purchaseNeedsBody: document.querySelector("#purchaseNeedsBody"),
+  purchaseNeedsSummary: document.querySelector("#purchaseNeedsSummary"),
+  purchaseSearch: document.querySelector("#purchaseSearch"),
+  purchaseSupplierFilter: document.querySelector("#purchaseSupplierFilter"),
+  purchaseProducerFilter: document.querySelector("#purchaseProducerFilter"),
+  purchaseTypeFilter: document.querySelector("#purchaseTypeFilter"),
+  refreshPurchaseNeedsBtn: document.querySelector("#refreshPurchaseNeedsBtn"),
+  exportPurchaseNeedsCsvBtn: document.querySelector("#exportPurchaseNeedsCsvBtn"),
+  sendPurchaseNeedsTelegramBtn: document.querySelector("#sendPurchaseNeedsTelegramBtn"),
+  createBackupBtn: document.querySelector("#createBackupBtn"),
+  refreshBackupsBtn: document.querySelector("#refreshBackupsBtn"),
+  backupsBody: document.querySelector("#backupsBody"),
+  backupStatus: document.querySelector("#backupStatus"),
+  offcutForm: document.querySelector("#offcutForm"),
+  offcutStorageForm: document.querySelector("#offcutStorageForm"),
+  offcutStorageBody: document.querySelector("#offcutStorageBody"),
+  clearOffcutStorageBtn: document.querySelector("#clearOffcutStorageBtn"),
+  reassignOffcutStorageBtn: document.querySelector("#reassignOffcutStorageBtn"),
+  supplyForm: document.querySelector("#supplyForm"),
+  suppliesBody: document.querySelector("#suppliesBody"),
+  suppliesBody: document.querySelector("#suppliesBody"),
+  clearSupplyBtn: document.querySelector("#clearSupplyBtn"),
+  customerForm: document.querySelector("#customerForm"),
+  editSelectedCustomerBtn: document.querySelector("#editSelectedCustomerBtn"),
+  deleteSelectedCustomerBtn: document.querySelector("#deleteSelectedCustomerBtn"),
+  deleteSelectedCustomerDocsBtn: document.querySelector("#deleteSelectedCustomerDocsBtn"),
+  deleteSelectedCustomerOrderBundleBtn: document.querySelector("#deleteSelectedCustomerOrderBundleBtn"),
+  orderForm: document.querySelector("#orderForm"),
+  showNewOrderFormBtn: document.querySelector("#showNewOrderFormBtn"),
+  editSelectedOrderBtn: document.querySelector("#editSelectedOrderBtn"),
+  deleteSelectedOrderBtn: document.querySelector("#deleteSelectedOrderBtn"),
+  paymentForm: document.querySelector("#paymentForm"),
+  priceItemForm: document.querySelector("#priceItemForm"),
+  clearPriceItemBtn: document.querySelector("#clearPriceItemBtn"),
+  editSelectedPriceBtn: document.querySelector("#editSelectedPriceBtn"),
+  deleteSelectedPriceBtn: document.querySelector("#deleteSelectedPriceBtn"),
+  cutTechnologyPriceForm: document.querySelector("#cutTechnologyPriceForm"),
+  saveCutTechnologyPriceBtn: document.querySelector("#saveCutTechnologyPriceBtn"),
+  clearCutTechnologyPriceBtn: document.querySelector("#clearCutTechnologyPriceBtn"),
+  editSelectedCutTechnologyPriceBtn: document.querySelector("#editSelectedCutTechnologyPriceBtn"),
+  deleteSelectedCutTechnologyPriceBtn: document.querySelector("#deleteSelectedCutTechnologyPriceBtn"),
+  cutTechnologyPricesBody: document.querySelector("#cutTechnologyPricesBody"),
+  quoteLineForm: document.querySelector("#quoteLineForm"),
+  priceItemsBody: document.querySelector("#priceItemsBody"),
+  quoteLinesBody: document.querySelector("#quoteLinesBody"),
+  quoteSummary: document.querySelector("#quoteSummary"),
+  cutJobForm: document.querySelector("#cutJobForm"),
+  cutPartForm: document.querySelector("#cutPartForm"),
+  cutPartEditorPanel: document.querySelector("#cutPartEditorPanel"),
+  cutPartEditorForm: document.querySelector("#cutPartEditorForm"),
+  cutQuoteForm: document.querySelector("#cutQuoteForm"),
+  cutJobsBody: document.querySelector("#cutJobsBody"),
+  cutPartsBody: document.querySelector("#cutPartsBody"),
+  cutPartsFoot: document.querySelector("#cutPartsFoot"),
+  cutQuoteLinesBody: document.querySelector("#cutQuoteLinesBody"),
+  cutStatus: document.querySelector("#cutStatus"),
+  cutTotals: document.querySelector("#cutTotals"),
+  cutMaterialChips: document.querySelector("#cutMaterialChips"),
+  cutMaterialSearch: document.querySelector("#cutMaterialSearch"),
+  cutJobMaterialSearch: document.querySelector("#cutJobMaterialSearch"),
+  cutHideLegacyMaterials: document.querySelector("#cutHideLegacyMaterials"),
+  openMaterialCatalogImportBtn: document.querySelector("#openMaterialCatalogImportBtn"),
+  cutEdgeMaterialSearch: document.querySelector("#cutEdgeMaterialSearch"),
+  cutJobEdgeMaterialSearch: document.querySelector("#cutJobEdgeMaterialSearch"),
+  cutPhotoFile: document.querySelector("#cutPhotoFile"),
+  retryCutPhotoBtn: document.querySelector("#retryCutPhotoBtn"),
+  cutTextImport: document.querySelector("#cutTextImport"),
+  cutTextPreview: document.querySelector("#cutTextPreview"),
+  cutSourcePreview: document.querySelector("#cutSourcePreview"),
+  cutPreviewTemplate: document.querySelector("#cutPreviewTemplate"),
+  cutPreviewElementType: document.querySelector("#cutPreviewElementType"),
+  cutPreviewTechnology: document.querySelector("#cutPreviewTechnology"),
+  cutPreviewLacquerSides: document.querySelector("#cutPreviewLacquerSides"),
+  cutPreviewTechNotes: document.querySelector("#cutPreviewTechNotes"),
+  cutPreviewWorkMilling: document.querySelector("#cutPreviewWorkMilling"),
+  cutPreviewWorkDrilling: document.querySelector("#cutPreviewWorkDrilling"),
+  cutPreviewWorkLacquer: document.querySelector("#cutPreviewWorkLacquer"),
+  cutPreviewWorkOther: document.querySelector("#cutPreviewWorkOther"),
+  applyCutPreviewDefaultsBtn: document.querySelector("#applyCutPreviewDefaultsBtn"),
+  selectAllCutParts: document.querySelector("#selectAllCutParts"),
+  selectedCutPartsCount: document.querySelector("#selectedCutPartsCount"),
+  cutPartsTemplateSelect: document.querySelector("#cutPartsTemplateSelect"),
+  applyCutPartsTemplateBtn: document.querySelector("#applyCutPartsTemplateBtn"),
+  editSelectedCutPartBtn: document.querySelector("#editSelectedCutPartBtn"),
+  printCutLabelsBtn: document.querySelector("#printCutLabelsBtn"),
+  selectAllCutPartsBtn: document.querySelector("#selectAllCutPartsBtn"),
+  clearCutPartsSelectionBtn: document.querySelector("#clearCutPartsSelectionBtn"),
+  cutTextImportStatus: document.querySelector("#cutTextImportStatus"),
+  cutTextImportToggleBtn: document.querySelector("#cutTextImportToggleBtn"),
+  cutTextImportPanel: document.querySelector("#cutTextImportPanel"),
+  importExportedProjectBtn: document.querySelector("#importExportedProjectBtn"),
+  cutProducerFilter: document.querySelector("#cutProducerFilter"),
+  cutThicknessFilter: document.querySelector("#cutThicknessFilter"),
+  cutJobProducerFilter: document.querySelector("#cutJobProducerFilter"),
+  cutJobThicknessFilter: document.querySelector("#cutJobThicknessFilter"),
+  calcLength: document.querySelector("#calcLength"),
+  calcWidth: document.querySelector("#calcWidth"),
+  calcCount: document.querySelector("#calcCount"),
+  notifyText: document.querySelector("#notifyText"),
+  goToOrderCuttingBtn: document.querySelector("#goToOrderCuttingBtn"),
+  newCutJobBtn: document.querySelector("#newCutJobBtn"),
+  deleteCutJobBtn: document.querySelector("#deleteCutJobBtn"),
+  newCutPartEditorBtn: document.querySelector("#newCutPartEditorBtn"),
+  closeCutPartEditorBtn: document.querySelector("#closeCutPartEditorBtn"),
+  editSelectedMaterialBtn: document.querySelector("#editSelectedMaterialBtn"),
+  deleteSelectedMaterialBtn: document.querySelector("#deleteSelectedMaterialBtn"),
+  printSelectedOffcutLabelBtn: document.querySelector("#printSelectedOffcutLabelBtn"),
+  assignSelectedOffcutStorageBtn: document.querySelector("#assignSelectedOffcutStorageBtn"),
+  reserveSelectedOffcutBtn: document.querySelector("#reserveSelectedOffcutBtn"),
+  releaseSelectedOffcutBtn: document.querySelector("#releaseSelectedOffcutBtn"),
+  useSelectedOffcutBtn: document.querySelector("#useSelectedOffcutBtn"),
+  editSelectedOffcutBtn: document.querySelector("#editSelectedOffcutBtn"),
+  deleteSelectedOffcutBtn: document.querySelector("#deleteSelectedOffcutBtn"),
+  openCutExportFolderBtn: document.querySelector("#openCutExportFolderBtn"),
+  payerCustomerSelect: document.querySelector("#payerCustomerSelect"),
+  remainderStatus: document.querySelector("#remainderStatus"),
+  remainderLogs: document.querySelector("#remainderLogs"),
+  remaindersUrlText: document.querySelector("#remaindersUrlText"),
+  copyRemaindersUrlBtn: document.querySelector("#copyRemaindersUrlBtn"),
+  refreshOffcutsBtn: document.querySelector("#refreshOffcutsBtn"),
+  checkGibLabProjectSyncBtn: document.querySelector("#checkGibLabProjectSyncBtn"),
+  autoRefreshOffcuts: document.querySelector("#autoRefreshOffcuts"),
+  offcutsRefreshInterval: document.querySelector("#offcutsRefreshInterval"),
+  offcutsRefreshStatus: document.querySelector("#offcutsRefreshStatus"),
+  giblabProjectSyncStatus: document.querySelector("#giblabProjectSyncStatus"),
+  offcutStationName: document.querySelector("#offcutStationName"),
+  toast: document.querySelector("#toast")
+};
 
 const treeHiddenSetting = localStorage.getItem("giblabTreeHidden") === "1";
 setTreeHidden(treeHiddenSetting);
 initializeStationName();
-
-elements.globalCutOrderSelect = document.querySelector("#globalCutOrderSelect");
-elements.cuttingPositionsPanel = document.querySelector("#cuttingPositionsPanel");
-
-if (elements.globalCutOrderSelect) {
-  elements.globalCutOrderSelect.addEventListener("change", (e) => {
-    state.selectedOrderId = Number(e.target.value) || null;
-    state.selectedCutJobId = null;
-    state.cutParts = [];
-    state.cutQuoteLines = [];
-    if (elements.cutJobForm) elements.cutJobForm.reset();
-    renderCutJobs();
-    renderCutParts();
-    renderCutQuoteLines();
-
-    if (state.selectedOrderId) {
-      elements.cuttingPositionsPanel.style.display = "block";
-    } else {
-      elements.cuttingPositionsPanel.style.display = "none";
-    }
-  });
-}
-
+initializeOffcutAutoRefresh();
+initializeCutPreviewTools();
+initializeProductionOperator();
 
 window.addEventListener("unhandledrejection", (event) => {
-  const message = event.reason?.message || "Operacja nie powiodÄąâ€ša siĂ„â„˘";
+  const message = event.reason?.message || "Operacja nie powiodła się";
   showToast(message);
 });
 
@@ -52,10 +536,31 @@ elements.dashboardCards?.addEventListener("click", (event) => {
   setDashboardPanel(card.dataset.dashboardTarget);
 });
 
-function activateTab(tabName) {
+async function activateTab(tabName) {
+  const materialContextTabs = new Set(["materials", "stock", "purchase"]);
+  elements.layout?.classList.toggle("tree-context-hidden", !materialContextTabs.has(tabName));
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === tabName));
   document.querySelectorAll(".tab-page").forEach((page) => page.classList.remove("active"));
   document.querySelector(`#${tabName}Tab`)?.classList.add("active");
+  renderTree();
+
+  if (tabName === "pricing") {
+    await refreshCrm();
+    await refreshPricing();
+    const orderId = Number(
+      elements.quoteLineForm.elements.order_id.value
+      || state.selectedOrderId
+      || state.orders[0]?.id
+      || 0
+    );
+    if (orderId) {
+      state.selectedOrderId = orderId;
+      await loadQuoteLines(orderId);
+    }
+  }
+  if (tabName === "production") await refreshProduction();
+  if (tabName === "productionCosts") await refreshProductionCosts();
+  if (tabName === "offcuts") await refreshOffcuts({ silent: true });
 }
 
 function setDashboardPanel(panelName) {
@@ -74,7 +579,7 @@ function setCutTextImportPanel(open) {
   elements.cutTextImportPanel.classList.toggle("open", Boolean(open));
   if (elements.cutTextImportToggleBtn) {
     elements.cutTextImportToggleBtn.classList.toggle("active", Boolean(open));
-    elements.cutTextImportToggleBtn.textContent = open ? "Ukryj import tekst / zdjĂ„â„˘cie" : "Import tekst / zdjĂ„â„˘cie";
+    elements.cutTextImportToggleBtn.textContent = open ? "Ukryj import" : "Import tekst / zdjęcie";
   }
   if (open) {
     setTimeout(() => elements.cutTextImport?.focus?.(), 0);
@@ -82,10 +587,11 @@ function setCutTextImportPanel(open) {
 }
 
 async function importExportedProjectResult() {
-  const orderId = Number(elements.globalCutOrderSelect?.value || state.selectedOrderId || 0);
+  const orderId = Number(cutOrderField().value || state.selectedOrderId || 0);
   const jobId = Number(state.selectedCutJobId || 0);
   if (!orderId && !jobId) return showToast("Najpierw wybierz zamówienie albo pozycję formatek");
-  const url = orderId ? `/api/orders/${orderId}/import-exported-project` : `/api/cut-jobs/${jobId}/import-exported-project`;
+  if (!jobId) return showToast("Najpierw zaznacz pozycję formatek. Wynik GibLab odbieramy osobno dla pozycji.");
+  const url = jobId ? `/api/cut-jobs/${jobId}/import-exported-project` : `/api/orders/${orderId}/import-exported-project`;
   const result = await postJson(url, {});
   await refreshCutting();
   await refreshOffcuts();
@@ -96,15 +602,15 @@ async function importExportedProjectResult() {
   const board = result.totalBoardSheets ? `${formatNumber(result.totalBoardSheets)} ark.` : "0 ark.";
   const boardM2 = result.totalBoardM2 ? `${formatNumber(result.totalBoardM2)} m2` : "0 m2";
   const edge = result.totalEdgeMeters ? `${formatNumber(result.totalEdgeMeters)} mb` : "0 mb";
-  elements.cutStatus.textContent = `Odebrano wynik GibLab z pliku: ${result.path}. Do wyceny: pÄąâ€šyta ${board} / ${boardM2}, okleina ${edge}.`;
+  elements.cutStatus.textContent = `Odebrano wynik GibLab z pliku: ${result.path}. Do wyceny: płyta ${board} / ${boardM2}, okleina ${edge}.`;
   showToast("Wynik GibLab pobrany do wyceny");
 }
 
 elements.hideTreeBtn.addEventListener("click", () => setTreeHidden(true));
 elements.showTreeBtn.addEventListener("click", () => setTreeHidden(false));
 elements.stockForm.elements.event_type.value = "receive";
-elements.stockForm.elements.event_type.querySelector('[value="use_reserved"]').textContent = "ZuÄąÄ˝ycie rezerwacji";
-document.querySelectorAll("#stockTab th")[5].textContent = "DostĂ„â„˘pne";
+elements.stockForm.elements.event_type.querySelector('[value="use_reserved"]').textContent = "Zużycie rezerwacji";
+document.querySelectorAll("#stockTab th")[5].textContent = "Dostępne";
 
 document.querySelector("#importDefaultBtn").addEventListener("click", async () => {
   const result = await postJson("/api/import/goods", {});
@@ -135,11 +641,59 @@ document.querySelector("#exportGiblabBtn").addEventListener("click", async () =>
 document.querySelector("#polishCatalogBtn").addEventListener("click", async () => {
   const result = await postJson("/api/tools/polish-catalog", {});
   await refreshAll();
-  showToast(`Spolszczono ${result.changedNames} nazw i ${result.changedCodes} kodÄ‚Ĺ‚w`);
+  showToast(`Spolszczono ${result.changedNames} nazw i ${result.changedCodes} kodów`);
 });
 
 document.querySelector("#clearFormBtn").addEventListener("click", () => {
   resetMaterialForm();
+});
+
+document.querySelectorAll("[data-production-station]").forEach((button) => {
+  button.addEventListener("click", async () => {
+    state.productionStation = button.dataset.productionStation;
+    document.querySelectorAll("[data-production-station]").forEach((item) => {
+      item.classList.toggle("active", item === button);
+    });
+    await refreshProduction();
+  });
+});
+
+elements.productionOperator?.addEventListener("change", () => {
+  localStorage.setItem("giblabProductionOperator", elements.productionOperator.value.trim());
+});
+
+elements.refreshProductionBtn?.addEventListener("click", refreshProduction);
+
+elements.refreshProductionCostsBtn?.addEventListener("click", refreshProductionCosts);
+
+elements.productionAnalyticsFilterForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  state.productionAnalyticsFilters = readProductionAnalyticsFiltersFromForm();
+  await refreshProductionCosts();
+});
+
+elements.productionAnalyticsOrderFilter?.addEventListener("change", async () => {
+  state.productionAnalyticsFilters = readProductionAnalyticsFiltersFromForm();
+  await refreshProductionCosts();
+});
+
+elements.productionAnalyticsMonthFilter?.addEventListener("change", async () => {
+  state.productionAnalyticsFilters = readProductionAnalyticsFiltersFromForm();
+  await refreshProductionCosts();
+});
+
+elements.clearProductionAnalyticsFiltersBtn?.addEventListener("click", async () => {
+  state.productionAnalyticsFilters = { order_id: "", month: "" };
+  renderProductionAnalyticsFilters();
+  await refreshProductionCosts();
+});
+
+elements.productionCostSettingsForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  saveProductionCostSettings(readProductionCostSettingsFromForm());
+  renderProductionCostSettingsForm();
+  renderProductionCosts();
+  showToast("Koszty produkcji zapisane lokalnie");
 });
 
 elements.editSelectedMaterialBtn?.addEventListener("click", () => {
@@ -151,11 +705,17 @@ elements.deleteSelectedMaterialBtn?.addEventListener("click", deleteSelectedMate
 
 elements.newMaterialFolderBtn?.addEventListener("click", () => {
   const parent = selectedMaterialFolderId();
+  const parentLabel = selectedMaterialFolderLabel();
   resetMaterialForm();
   elements.materialForm.elements.isfolder.checked = true;
   if (parent) elements.materialForm.elements.paren_id.value = String(parent);
+  if (elements.materialParentHint) {
+    elements.materialParentHint.textContent = parent
+      ? `Tworzysz nowy folder w: ${parentLabel}.`
+      : "Tworzysz nowy folder główny.";
+  }
   elements.materialForm.elements.name.focus();
-  showToast(parent ? `Nowy folder w folderze ID ${parent}` : "Nowy folder gÄąâ€šÄ‚Ĺ‚wny");
+  showToast(parent ? `Nowy folder w: ${parentLabel}` : "Nowy folder główny");
 });
 
 [elements.materialSearchFilter, elements.materialProducerFilter, elements.materialThicknessFilter, elements.materialTypeFilter]
@@ -163,6 +723,12 @@ elements.newMaterialFolderBtn?.addEventListener("click", () => {
     field?.addEventListener("input", renderMaterials);
     field?.addEventListener("change", renderMaterials);
   });
+
+elements.materialHideLegacyUa?.addEventListener("change", () => {
+  state.selectedId = null;
+  renderMaterialFilters();
+  renderMaterials();
+});
 
 elements.clearMaterialFiltersBtn?.addEventListener("click", () => {
   elements.materialSearchFilter.value = "";
@@ -172,17 +738,18 @@ elements.clearMaterialFiltersBtn?.addEventListener("click", () => {
   renderMaterials();
 });
 
+elements.hideZeroStock?.addEventListener("change", renderStock);
+
 document.querySelector("#clearCustomerBtn").addEventListener("click", () => {
   state.selectedCustomerId = null;
   state.customerRelatedDocs = [];
+  setCustomerEditMode(null);
   elements.customerForm.reset();
   renderCustomers();
   renderCustomerRelatedDocs();
 });
 
 document.querySelector("#clearOrderBtn").addEventListener("click", resetOrderWorkspace);
-// elements.newOrderBtn.addEventListener("click", resetOrderWorkspace);
-// elements.addOrderPositionBtn.addEventListener("click", openCutPositionForSelectedOrder);
 elements.goToOrderCuttingBtn?.addEventListener("click", openSelectedOrderCutting);
 
 elements.editSelectedCustomerBtn?.addEventListener("click", () => {
@@ -194,9 +761,28 @@ elements.deleteSelectedCustomerBtn?.addEventListener("click", deleteSelectedCust
 elements.deleteSelectedCustomerDocsBtn?.addEventListener("click", deleteSelectedCustomerDocs);
 elements.deleteSelectedCustomerOrderBundleBtn?.addEventListener("click", deleteSelectedCustomerOrderBundle);
 
+elements.showNewOrderFormBtn?.addEventListener("click", () => {
+  const workspace = document.querySelector(".orders-workspace");
+  if (workspace) {
+    workspace.classList.remove("hidden");
+    workspace.scrollIntoView({ behavior: "smooth" });
+  }
+  state.selectedOrderId = null;
+  elements.orderForm.reset();
+  elements.paymentForm.reset();
+  if (elements.orderForm.elements.order_date) {
+    elements.orderForm.elements.order_date.value = new Date().toISOString().split("T")[0];
+  }
+});
+
 elements.editSelectedOrderBtn?.addEventListener("click", () => {
   if (!state.selectedOrderId) return showToast("Najpierw zaznacz zamówienie");
   fillOrderForm(Number(state.selectedOrderId));
+  const workspace = document.querySelector(".orders-workspace");
+  if (workspace) {
+    workspace.classList.remove("hidden");
+    workspace.scrollIntoView({ behavior: "smooth" });
+  }
 });
 
 elements.deleteSelectedOrderBtn?.addEventListener("click", deleteSelectedOrder);
@@ -204,20 +790,27 @@ elements.deleteSelectedOrderBtn?.addEventListener("click", deleteSelectedOrder);
 elements.customerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const payload = formPayload(elements.customerForm);
-  const url = state.selectedCustomerId ? `/api/customers/${state.selectedCustomerId}` : "/api/customers";
-  await postJson(url, payload, state.selectedCustomerId ? "PUT" : "POST");
+  const editingCustomerId = state.editingCustomerId;
+  const url = editingCustomerId ? `/api/customers/${editingCustomerId}` : "/api/customers";
+  await postJson(url, payload, editingCustomerId ? "PUT" : "POST");
   state.selectedCustomerId = null;
+  state.customerRelatedDocs = [];
+  setCustomerEditMode(null);
   elements.customerForm.reset();
   await refreshCrm();
-  showToast("Klient zapisany");
+  renderCustomerRelatedDocs();
+  showToast(editingCustomerId ? "Klient zaktualizowany" : "Dodano klienta");
 });
 
 elements.orderForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const payload = formPayload(elements.orderForm);
-  if (!state.selectedOrderId) delete payload.order_number;
-  const url = state.selectedOrderId ? `/api/orders/${state.selectedOrderId}` : "/api/orders";
-  await postJson(url, payload, state.selectedOrderId ? "PUT" : "POST");
+  const editingOrderId = state.orders.some((order) => Number(order.id) === Number(state.selectedOrderId))
+    ? state.selectedOrderId
+    : null;
+  if (!editingOrderId) delete payload.order_number;
+  const url = editingOrderId ? `/api/orders/${editingOrderId}` : "/api/orders";
+  await postJson(url, payload, editingOrderId ? "PUT" : "POST");
   state.selectedOrderId = null;
   elements.orderForm.reset();
   setDefaultOrderDates();
@@ -234,7 +827,7 @@ elements.paymentForm.addEventListener("submit", async (event) => {
   elements.paymentForm.reset();
   setDefaultPaymentDate();
   await refreshCrm();
-  showToast("WpÄąâ€šata dodana");
+  showToast("Wpłata dodana");
 });
 
 elements.priceItemForm.addEventListener("submit", async (event) => {
@@ -259,6 +852,58 @@ elements.editSelectedPriceBtn?.addEventListener("click", () => {
 });
 
 elements.deleteSelectedPriceBtn?.addEventListener("click", deleteSelectedPriceItem);
+
+elements.cutTechnologyPriceForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const url = state.selectedCutTechnologyPriceId
+    ? `/api/cut-technology-prices/${state.selectedCutTechnologyPriceId}`
+    : "/api/cut-technology-prices";
+  const payload = formPayload(elements.cutTechnologyPriceForm);
+  if (payload.template_key === "__custom__") payload.template_key = "";
+  await postJson(url, payload, state.selectedCutTechnologyPriceId ? "PUT" : "POST");
+  state.selectedCutTechnologyPriceId = null;
+  elements.cutTechnologyPriceForm.reset();
+  if (elements.saveCutTechnologyPriceBtn) elements.saveCutTechnologyPriceBtn.textContent = "DODAJ NOWĄ POZYCJĘ";
+  await refreshPricing();
+  await refreshCrm();
+  renderCutParts();
+  showToast("Cena technologii zapisana");
+});
+
+elements.clearCutTechnologyPriceBtn?.addEventListener("click", () => {
+  state.selectedCutTechnologyPriceId = null;
+  elements.cutTechnologyPriceForm.reset();
+  if (elements.saveCutTechnologyPriceBtn) elements.saveCutTechnologyPriceBtn.textContent = "DODAJ NOWĄ POZYCJĘ";
+  renderCutTechnologyPrices();
+});
+
+elements.editSelectedCutTechnologyPriceBtn?.addEventListener("click", () => {
+  if (!state.selectedCutTechnologyPriceId) return showToast("Najpierw zaznacz cenę technologii");
+  fillCutTechnologyPriceForm(Number(state.selectedCutTechnologyPriceId));
+});
+
+elements.deleteSelectedCutTechnologyPriceBtn?.addEventListener("click", deleteSelectedCutTechnologyPrice);
+elements.cutTechnologyPriceForm?.elements.template_key?.addEventListener("change", () => {
+  if (elements.cutTechnologyPriceForm.elements.template_key.value === "__custom__") {
+    const form = elements.cutTechnologyPriceForm;
+    for (const name of ["name", "element_type", "technology", "lacquer_sides", "unit_price", "notes"]) {
+      form.elements[name].value = "";
+    }
+    form.elements.unit.value = "m2";
+    form.elements.name.focus();
+    return;
+  }
+  const template = findCutTechnologyTemplate(elements.cutTechnologyPriceForm.elements.template_key.value);
+  if (!template) return;
+  const form = elements.cutTechnologyPriceForm;
+  form.elements.name.value = template.name || "";
+  form.elements.element_type.value = template.element_type || "";
+  form.elements.technology.value = template.technology || "";
+  form.elements.lacquer_sides.value = template.lacquer_sides || "";
+  form.elements.unit.value = template.pricing_unit || "m2";
+  form.elements.unit_price.value = String(template.default_price_net || 0).replace(".", ",");
+  form.elements.notes.value = template.label || "";
+});
 
 elements.quoteLineForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -296,7 +941,7 @@ document.querySelector("#calcAreaBtn").addEventListener("click", () => {
   const length = parseDecimal(elements.calcLength.value);
   const width = parseDecimal(elements.calcWidth.value);
   const count = parseDecimal(elements.calcCount.value || "1");
-  if (!length || !width || !count) return showToast("Podaj dÄąâ€šugoÄąâ€şĂ„â€ˇ, szerokoÄąâ€şĂ„â€ˇ i iloÄąâ€şĂ„â€ˇ");
+  if (!length || !width || !count) return showToast("Podaj długość, szerokość i ilość");
   elements.quoteLineForm.elements.quantity.value = formatDecimalInput((length * width * count) / 1000000);
   elements.quoteLineForm.elements.unit.value = "m2";
 });
@@ -304,7 +949,7 @@ document.querySelector("#calcAreaBtn").addEventListener("click", () => {
 document.querySelector("#calcLinearBtn").addEventListener("click", () => {
   const length = parseDecimal(elements.calcLength.value);
   const count = parseDecimal(elements.calcCount.value || "1");
-  if (!length || !count) return showToast("Podaj dÄąâ€šugoÄąâ€şĂ„â€ˇ i iloÄąâ€şĂ„â€ˇ");
+  if (!length || !count) return showToast("Podaj długość i ilość");
   elements.quoteLineForm.elements.quantity.value = formatDecimalInput((length * count) / 1000);
   elements.quoteLineForm.elements.unit.value = "mb";
 });
@@ -312,7 +957,6 @@ document.querySelector("#calcLinearBtn").addEventListener("click", () => {
 elements.cutJobForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const payload = formPayload(elements.cutJobForm);
-  payload.order_id = state.selectedOrderId;
   const wasNew = !state.selectedCutJobId;
   const url = state.selectedCutJobId ? `/api/cut-jobs/${state.selectedCutJobId}` : "/api/cut-jobs";
   const saved = await postJson(url, payload, state.selectedCutJobId ? "PUT" : "POST");
@@ -330,7 +974,7 @@ document.querySelector("#clearCutJobBtn").addEventListener("click", () => {
 });
 
 elements.newCutJobBtn.addEventListener("click", () => {
-  const orderId = Number(elements.globalCutOrderSelect?.value || state.selectedOrderId || 0);
+  const orderId = Number(cutOrderField().value || state.selectedOrderId || 0);
   if (!orderId) return showToast("Najpierw wybierz zamówienie");
   prepareNewCutJob(orderId);
   showToast("Nowa pozycja gotowa do wpisania");
@@ -342,12 +986,33 @@ elements.cutPartForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!state.selectedCutJobId) return showToast("Najpierw wybierz albo zapisz zlecenie formatek");
   const selectedMaterialId = elements.cutPartForm.elements.material_id.value || elements.cutJobForm.elements.material_id.value;
-  await postJson(`/api/cut-jobs/${state.selectedCutJobId}/parts`, formPayload(elements.cutPartForm));
+  const saved = await postJson(`/api/cut-jobs/${state.selectedCutJobId}/parts`, formPayload(elements.cutPartForm));
+  state.highlightedCutPartId = saved.id;
   prepareNextCutPartRow(selectedMaterialId);
   await loadCutParts(state.selectedCutJobId);
   await refreshCutting();
-  showToast("Formatka dodana");
+  showToast(`Formatka dodana do pozycji: ${currentCutJobLabel()}`);
 });
+
+elements.cutPartEditorForm?.addEventListener("submit", saveCutPartEditor);
+elements.cutPartEditorForm?.elements.technology_template?.addEventListener("change", (event) => {
+  const template = findCutTechnologyTemplate(event.target.value);
+  if (template) applyTechnologyTemplateToForm(elements.cutPartEditorForm, template);
+});
+elements.newCutPartEditorBtn?.addEventListener("click", () => {
+  state.selectedCutPartId = null;
+  openCutPartEditor(null);
+  showToast("Nowa formatka gotowa do wpisania");
+});
+elements.closeCutPartEditorBtn?.addEventListener("click", closeCutPartEditor);
+elements.selectAllCutParts?.addEventListener("change", toggleAllCutPartsSelection);
+elements.applyCutPartsTemplateBtn?.addEventListener("click", applyTemplateToSelectedCutParts);
+elements.editSelectedCutPartBtn?.addEventListener("click", editSelectedCutPart);
+elements.printCutLabelsBtn?.addEventListener("click", printSelectedCutLabels);
+elements.selectAllCutPartsBtn?.addEventListener("click", selectAllCutPartsInCurrentJob);
+elements.clearCutPartsSelectionBtn?.addEventListener("click", clearCutPartsSelection);
+elements.cutQuoteForm?.addEventListener("input", renderCutParts);
+elements.cutQuoteForm?.addEventListener("change", renderCutParts);
 
 elements.cutPartForm.addEventListener("keydown", (event) => {
   if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.altKey) return;
@@ -362,6 +1027,7 @@ document.querySelector("#cutExcelFile").addEventListener("change", async (event)
   if (!file) return;
   const form = new FormData();
   form.append("formatki", file);
+  appendCutImportTechnology(form);
   const result = await fetchJson(`/api/cut-jobs/${state.selectedCutJobId}/import-excel`, { method: "POST", body: form });
   await refreshCutting();
   await loadCutParts(state.selectedCutJobId);
@@ -369,37 +1035,71 @@ document.querySelector("#cutExcelFile").addEventListener("change", async (event)
   showToast(`Zaimportowano ${result.imported} formatek`);
 });
 
+document.querySelector("#cutConstructorProjectFile")?.addEventListener("change", async (event) => {
+  if (!state.selectedCutJobId) return showToast("Najpierw wybierz albo zapisz pozycję");
+  const file = event.target.files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append("project", file);
+  appendCutImportTechnology(form);
+  const result = await fetchJson(`/api/cut-jobs/${state.selectedCutJobId}/import-constructor-project`, { method: "POST", body: form });
+  event.target.value = "";
+  await refreshCutting();
+  await loadCutParts(state.selectedCutJobId);
+  elements.cutStatus.textContent = `Zaimportowano z 3D Constructora: ${result.imported} formatek z pliku ${result.projectName || result.sourceName}`;
+  showToast(`Dodano ${result.imported} formatek z .project 3D`);
+});
+
 document.querySelector("#importCutTextBtn").addEventListener("click", importCutPartsFromText);
+elements.applyCutPreviewDefaultsBtn?.addEventListener("click", applyCutPreviewDefaultsToSelected);
+elements.cutPreviewTemplate?.addEventListener("change", () => {
+  const template = findCutTechnologyTemplate(elements.cutPreviewTemplate.value);
+  if (template) applyTechnologyTemplateToPreviewTools(template);
+});
 
 elements.cutPhotoFile.addEventListener("change", importCutTextFromPhoto);
+elements.retryCutPhotoBtn?.addEventListener("click", async () => {
+  if (!state.lastCutPhotoFile) return showToast("Najpierw wybierz zdjęcie");
+  await scanCutPhoto(state.lastCutPhotoFile);
+});
 elements.cutTextImport.addEventListener("input", updateCutTextImportStatus);
 elements.cutTextImportToggleBtn?.addEventListener("click", () => {
   setCutTextImportPanel(!elements.cutTextImportPanel?.classList.contains("open"));
 });
+elements.openMaterialCatalogImportBtn?.addEventListener("click", () => {
+  activateTab("materials");
+  elements.materialImportFile?.scrollIntoView({ behavior: "smooth", block: "center" });
+  setTimeout(() => elements.materialImportFile?.click(), 250);
+});
 elements.importExportedProjectBtn?.addEventListener("click", importExportedProjectResult);
 
-document.querySelector("#exportCutExcelBtn").addEventListener("click", async () => {
-  const orderId = Number(elements.globalCutOrderSelect?.value || state.selectedOrderId || 0);
-  if (orderId) {
-    const result = await postJson(`/api/orders/${orderId}/export-project`, {});
-    await postJson(`/api/orders/${orderId}/open-export-folder`, {});
-    await refreshCutting();
-    elements.cutStatus.textContent = `Plik GibLab ca?ego zam?wienia: ${result.target}. Odśwież? widok w GibLab!`;
-    alert(`Zapisano plik ca?ego zam?wienia:
-${result.target}
-
-Aby zobaczy? go w programie GibLab, przejd? tam i kliknij przycisk "????????" (Odśwież?) po lewej stronie!`);
-    return;
-  }
-  if (!state.selectedCutJobId) return showToast("Najpierw wybierz zamówienie albo zlecenie formatek");
+document.querySelector("#exportCutJobProjectBtn").addEventListener("click", async () => {
+  if (!state.selectedCutJobId) return showToast("Najpierw wybierz albo zapisz pozycję");
   const result = await postJson(`/api/cut-jobs/${state.selectedCutJobId}/export-excel`, {});
   await postJson(`/api/cut-jobs/${state.selectedCutJobId}/open-export-folder`, {});
   await refreshCutting();
-  elements.cutStatus.textContent = `Plik GibLab: ${result.target}. Odśwież? widok w GibLab!`;
-  alert(`Zapisano plik:
+  elements.cutStatus.textContent = `Plik wybranej pozycji: ${result.target}. Odśwież widok w GibLab.`;
+  alert(`Zapisano plik wybranej pozycji:
 ${result.target}
 
-Aby zobaczy? go w programie GibLab, przejd? tam i kliknij przycisk "????????" (Odśwież?) po lewej stronie!`);
+Aby zobaczyć go w programie GibLab, przejdź tam i kliknij przycisk odświeżania po lewej stronie.`);
+});
+
+document.querySelector("#exportCutOrderProjectBtn").addEventListener("click", async () => {
+  const orderId = Number(cutOrderField().value || state.selectedOrderId || 0);
+  if (!orderId) return showToast("Najpierw wybierz zamówienie");
+  const result = await postJson(`/api/orders/${orderId}/export-project`, {});
+  await postJson(`/api/orders/${orderId}/open-export-folder`, {});
+  await refreshCutting();
+  const targets = Array.isArray(result.targets) ? result.targets : [];
+  const fileList = targets.length
+    ? targets.map((row) => `- ${row.name || "Pozycja"}: ${row.target}`).join("\n")
+    : `- ${result.target}`;
+  elements.cutStatus.textContent = `Zapisano ${targets.length || 1} osobnych plików pozycji. Odśwież widok w GibLab.`;
+  alert(`Zapisano osobne pliki pozycji:
+${fileList}
+
+Aby zobaczyć je w programie GibLab, przejdź tam i kliknij przycisk odświeżania po lewej stronie.`);
 });
 
 
@@ -439,6 +1139,7 @@ document.querySelector("#applyServicePriceBtn").addEventListener("click", () => 
   const item = state.priceItems.find((row) => String(row.id) === itemId);
   if (!item || !target) return showToast("Wybierz pozycję z cennika i pole ceny");
   elements.cutQuoteForm.elements[target].value = String(item.unit_price).replace(".", ",");
+  renderCutParts();
 });
 
 document.querySelector("#cutProjectFile").addEventListener("change", async (event) => {
@@ -450,7 +1151,21 @@ document.querySelector("#cutProjectFile").addEventListener("change", async (even
   const result = await fetchJson(`/api/cut-jobs/${state.selectedCutJobId}/import-project`, { method: "POST", body: form });
   await refreshCutting();
   await refreshOffcuts();
-  elements.cutStatus.textContent = `Odebrano wynik GibLab: ${result.offcuts || 0} resztek, ${result.usedMaterials || 0} materiałÄ‚Ĺ‚w`;
+  elements.cutStatus.textContent = `Odebrano wynik GibLab: ${result.offcuts || 0} resztek, ${result.usedMaterials || 0} materiałów`;
+  showToast("Wynik .project zaimportowany");
+});
+
+document.querySelector("#cutProjectFile").addEventListener("change", async (event) => {
+  return;
+  if (!state.selectedCutJobId) return showToast("Najpierw wybierz zlecenie formatek");
+  const file = event.target.files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append("project", file);
+  const result = await fetchJson(`/api/cut-jobs/${state.selectedCutJobId}/import-project`, { method: "POST", body: form });
+  await refreshCutting();
+  await refreshOffcuts();
+  elements.cutStatus.textContent = `Odebrano wynik GibLab: ${result.offcuts || 0} resztek, ${result.usedMaterials || 0} materiałów`;
   showToast("Wynik .project zaimportowany");
 });
 
@@ -460,20 +1175,55 @@ document.querySelector("#notifySmsBtn").addEventListener("click", () => openNoti
 document.querySelector("#notifyWhatsappBtn").addEventListener("click", () => openNotifyLink("whatsapp"));
 document.querySelector("#notifyTelegramBtn").addEventListener("click", () => openNotifyLink("telegram"));
 document.querySelector("#notifyEmailBtn").addEventListener("click", () => openNotifyLink("email"));
+document.querySelector("#printReceiptBtn")?.addEventListener("click", printReceipt);
 document.querySelector("#importLatestProjectBtn").addEventListener("click", importLatestProject);
 document.querySelector("#showRemainderLogsBtn").addEventListener("click", showRemainderLogs);
 elements.copyRemaindersUrlBtn?.addEventListener("click", copyRemaindersUrl);
+elements.refreshOffcutsBtn?.addEventListener("click", async () => {
+  await refreshOffcuts();
+  showToast("Lista resztek odswiezona");
+});
+elements.checkGibLabProjectSyncBtn?.addEventListener("click", async () => {
+  const data = await postJson("/api/giblab-project-sync/check", {});
+  await refreshOffcuts({ silent: true });
+  renderGibLabProjectSyncStatus(data);
+  const imported = Number(data.result?.imported || 0);
+  showToast(imported ? `Zaimportowano wynikow GibLab: ${imported}` : "Nie ma nowego wyniku GibLab do pobrania");
+});
+elements.autoRefreshOffcuts?.addEventListener("change", () => {
+  localStorage.setItem(OFFCUT_AUTO_REFRESH_KEY, elements.autoRefreshOffcuts.checked ? "1" : "0");
+  setupOffcutAutoRefresh();
+  renderOffcutRefreshStatus();
+});
+elements.offcutsRefreshInterval?.addEventListener("change", () => {
+  localStorage.setItem(OFFCUT_REFRESH_INTERVAL_KEY, elements.offcutsRefreshInterval.value || "60");
+  setupOffcutAutoRefresh();
+  renderOffcutRefreshStatus();
+});
 
 elements.payerCustomerSelect.addEventListener("change", () => {
   const customer = state.customers.find((item) => String(item.id) === elements.payerCustomerSelect.value);
   if (customer) elements.paymentForm.elements.payer_name.value = customer.name;
 });
 
-
+cutOrderField().addEventListener("change", () => {
+  state.selectedOrderId = Number(cutOrderField().value) || null;
+  state.selectedCutJobId = null;
+  state.cutParts = [];
+  renderCutJobs();
+  renderCutParts();
+  renderCutTotals();
+});
 
 elements.cutJobForm.elements.material_id.addEventListener("change", () => {
   const material = state.flat.find((item) => String(item.id) === elements.cutJobForm.elements.material_id.value);
   if (material) applyCutJobMaterial(material);
+});
+elements.cutJobForm.elements.edge_material_id.addEventListener("change", (event) => {
+  const material = state.flat.find((item) => String(item.id) === event.target.value);
+  if (!material || material.isfolder) return;
+  elements.cutJobForm.elements.edge_material_name.value = material.name || "";
+  applyCutPartEdgeMaterial(material.id);
 });
 
 elements.cutPartForm.elements.material_id.addEventListener("change", (e) => applyCutPartMaterial(e.target.value));
@@ -483,6 +1233,14 @@ elements.cutMaterialSearch.addEventListener("input", renderCutMaterialLists);
 elements.cutEdgeMaterialSearch.addEventListener("input", renderEdgeMaterialLists);
 elements.cutProducerFilter.addEventListener("change", renderCutMaterialLists);
 elements.cutThicknessFilter.addEventListener("change", renderCutMaterialLists);
+elements.cutJobMaterialSearch?.addEventListener("input", renderCutMaterialLists);
+elements.cutHideLegacyMaterials?.addEventListener("change", () => {
+  renderCutMaterialFilters();
+  renderCutMaterialLists();
+});
+elements.cutJobEdgeMaterialSearch?.addEventListener("input", renderEdgeMaterialLists);
+elements.cutJobProducerFilter?.addEventListener("change", renderCutMaterialLists);
+elements.cutJobThicknessFilter?.addEventListener("change", renderCutMaterialLists);
 
 document.querySelector("#edgeAll").addEventListener("change", (event) => {
   ["edge_top", "edge_bottom", "edge_left", "edge_right"].forEach((name) => {
@@ -506,6 +1264,37 @@ elements.materialForm.addEventListener("submit", async (event) => {
   await refreshAll();
   resetMaterialForm();
   showToast("Pozycja katalogu zapisana");
+});
+
+elements.quickMaterialFolderForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const payload = formPayload(elements.quickMaterialFolderForm);
+  const saved = await postJson("/api/materials", {
+    paren_id: payload.paren_id,
+    isfolder: 1,
+    name: payload.name,
+    producer: payload.folder_kind === "producer" ? payload.name : "",
+    is_active: 1
+  });
+  elements.quickMaterialFolderForm.reset();
+  await refreshAll();
+  showToast(`Dodano folder: ${saved.name} (ID ${saved.id})`);
+});
+
+elements.quickMaterialForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const payload = formPayload(elements.quickMaterialForm);
+  const saved = await postJson("/api/materials", {
+    ...payload,
+    isfolder: 0,
+    is_active: 1
+  });
+  const parentId = payload.paren_id;
+  elements.quickMaterialForm.reset();
+  elements.quickMaterialForm.elements.paren_id.value = parentId;
+  elements.quickMaterialForm.elements.unit.value = "m2";
+  await refreshAll();
+  showToast(`Dodano materiał: ${saved.name} (ID ${saved.id})`);
 });
 
 elements.materialImportPreviewBtn?.addEventListener("click", previewMaterialCatalogImport);
@@ -547,12 +1336,20 @@ elements.deliveryForm?.addEventListener("submit", async (event) => {
 elements.deliveryLineForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!state.selectedDeliveryId) return showToast("Najpierw zapisz albo wybierz dostawę");
-  await postJson(`/api/deliveries/${state.selectedDeliveryId}/lines`, formPayload(elements.deliveryLineForm));
+  updateDeliveryQuantityFromSheets();
+  const payload = formPayload(elements.deliveryLineForm);
+  delete payload.sheet_count;
+  await postJson(`/api/deliveries/${state.selectedDeliveryId}/lines`, payload);
   elements.deliveryLineForm.reset();
+  updateDeliveryQuantityFromSheets();
   await refreshDeliveries();
   await loadDeliveryLines(state.selectedDeliveryId);
   showToast("Pozycja dostawy dodana");
 });
+
+elements.deliveryLineForm?.elements.material_id?.addEventListener("change", updateDeliveryQuantityFromSheets);
+elements.deliveryLineForm?.elements.sheet_count?.addEventListener("input", updateDeliveryQuantityFromSheets);
+elements.deliveryMaterialSearch?.addEventListener("input", renderDeliveryMaterialSelect);
 
 elements.newDeliveryBtn?.addEventListener("click", resetDeliveryForm);
 
@@ -562,7 +1359,7 @@ elements.postDeliveryBtn?.addEventListener("click", async () => {
   await refreshAll();
   state.selectedDeliveryId = result.id;
   await loadDeliveryLines(result.id);
-  showToast("Dostawa zaksiĂ„â„˘gowana");
+  showToast("Dostawa zaksięgowana");
 });
 
 elements.deliveryCorrectionForm?.addEventListener("submit", async (event) => {
@@ -574,7 +1371,7 @@ elements.deliveryCorrectionForm?.addEventListener("submit", async (event) => {
   } else {
     const delivery = currentDelivery();
     if (!delivery) return showToast("Najpierw wybierz zaksięgowaną dostawę");
-    if (delivery.status !== "posted") return showToast("KorektĂ„â„˘ moÄąÄ˝na zrobiĂ„â€ˇ tylko do zaksiĂ„â„˘gowanej dostawy");
+    if (delivery.status !== "posted") return showToast("Korektę można zrobić tylko do zaksięgowanej dostawy");
     saved = await postJson(`/api/deliveries/${delivery.id}/corrections`, payload);
   }
   state.selectedDeliveryCorrectionId = saved.id;
@@ -601,12 +1398,12 @@ elements.postDeliveryCorrectionBtn?.addEventListener("click", async () => {
   await refreshAll();
   state.selectedDeliveryCorrectionId = result.id;
   await loadDeliveryCorrectionLines(result.id);
-  showToast("Korekta zaksiĂ„â„˘gowana");
+  showToast("Korekta zaksięgowana");
 });
 
 elements.refreshPurchaseNeedsBtn?.addEventListener("click", async () => {
   await refreshPurchaseNeeds();
-  showToast("Raport zakupÄ‚Ĺ‚w odÄąâ€şwieÄąÄ˝ony");
+  showToast("Raport zakupów odświeżony");
 });
 
 elements.exportPurchaseNeedsCsvBtn?.addEventListener("click", () => {
@@ -615,7 +1412,7 @@ elements.exportPurchaseNeedsCsvBtn?.addEventListener("click", () => {
 
 elements.sendPurchaseNeedsTelegramBtn?.addEventListener("click", () => {
   const rows = state.purchaseNeeds.rows || [];
-  if (!rows.length) return showToast("Brak pozycji do wysÄąâ€šania");
+  if (!rows.length) return showToast("Brak pozycji do wysłania");
   const text = buildPurchaseNeedsTelegramText(rows);
   window.open(`https://t.me/share/url?url=&text=${encodeURIComponent(text)}`, "_blank");
 });
@@ -629,7 +1426,7 @@ elements.createBackupBtn?.addEventListener("click", async () => {
 
 elements.refreshBackupsBtn?.addEventListener("click", async () => {
   await refreshBackups();
-  showToast("Lista backupÄ‚Ĺ‚w odÄąâ€şwieÄąÄ˝ona");
+  showToast("Lista backupów odświeżona");
 });
 
 [elements.purchaseSearch, elements.purchaseSupplierFilter, elements.purchaseProducerFilter, elements.purchaseTypeFilter].forEach((input) => {
@@ -654,9 +1451,11 @@ elements.offcutForm.addEventListener("submit", async (event) => {
 });
 
 elements.editSelectedOffcutBtn?.addEventListener("click", () => {
-  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkĂ„â„˘");
+  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkę");
   fillOffcutForm(state.selectedOffcutId);
 });
+
+elements.printSelectedOffcutLabelBtn?.addEventListener("click", printSelectedOffcutLabel);
 
 elements.assignSelectedOffcutStorageBtn?.addEventListener("click", assignSelectedOffcutStorage);
 
@@ -683,7 +1482,7 @@ elements.offcutStorageForm?.addEventListener("submit", async (event) => {
   elements.offcutStorageForm.reset();
   elements.offcutStorageForm.elements.active.checked = true;
   await refreshOffcutStorageLocations();
-  showToast("RegaÄąâ€š zapisany");
+  showToast("Regał zapisany");
 });
 
 elements.clearOffcutStorageBtn?.addEventListener("click", () => {
@@ -725,6 +1524,16 @@ document.querySelector("#importProjectBtn").addEventListener("click", async () =
 });
 
 await refreshAll();
+const stationMode = productionStationFromUrl();
+if (stationMode) {
+  enableProductionStationMode(stationMode);
+  await activateTab("production");
+  window.setInterval(() => {
+    if (!document.hidden) refreshProduction().catch(() => {});
+  }, 15000);
+} else {
+  await activateTab(document.querySelector(".tab.active")?.dataset.tab || "dashboard");
+}
 setDefaultOrderDates();
 setDefaultPaymentDate();
 await loadNextOrderNumber();
@@ -750,10 +1559,302 @@ async function refreshAll() {
   await refreshPurchaseNeeds();
   await refreshBackups();
   await refreshCutting();
+  await refreshProduction();
   await refreshOffcutStorageLocations();
   await refreshOffcuts();
   renderCalendar();
   renderDashboard();
+}
+
+function initializeProductionOperator() {
+  if (!elements.productionOperator) return;
+  elements.productionOperator.value = localStorage.getItem("giblabProductionOperator") || "";
+}
+
+async function refreshProduction() {
+  if (!elements.productionTasksBody) return;
+  state.productionTasks = await fetchJson(`/api/production/tasks?station=${encodeURIComponent(state.productionStation)}`);
+  renderProductionTasks();
+}
+
+function productionStationFromUrl() {
+  const value = new URLSearchParams(window.location.search).get("station");
+  const stations = ["CNC", "Oklejarka", "Lakiernia"];
+  return stations.find((station) => normalizeText(station) === normalizeText(value)) || "";
+}
+
+function enableProductionStationMode(station) {
+  state.productionStation = station;
+  document.body.classList.add("production-station-mode");
+  document.title = `${station} - GibLab Produkcja`;
+  document.querySelectorAll("[data-production-station]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.productionStation === station);
+  });
+}
+
+function renderProductionTasks() {
+  if (!elements.productionTasksBody) return;
+  const counts = { Oczekuje: 0, "W trakcie": 0, Problem: 0, Zakończone: 0 };
+  for (const task of state.productionTasks) counts[task.status] = (counts[task.status] || 0) + 1;
+  elements.productionSummary.innerHTML = `
+    <strong>${escapeHtml(state.productionStation)}</strong>
+    <span>W przygotowaniu: ${counts.Oczekuje || 0}</span>
+    <span>W trakcie: ${counts["W trakcie"] || 0}</span>
+    <span>Problem: ${counts.Problem || 0}</span>
+    <span>Zakończone: ${counts.Zakończone || 0}</span>
+  `;
+  elements.productionTasksBody.innerHTML = state.productionTasks.map((task, index) => {
+    const canStart = task.status === "Oczekuje" || task.status === "Problem";
+    const canFinish = task.status === "W trakcie" || task.status === "Problem";
+    const canProblem = task.status !== "Zakończone";
+    return `
+      <tr class="production-status-${productionStatusClass(task.status)}">
+        <td>${index + 1}</td>
+        <td>${escapeHtml(task.order_number || "-")}</td>
+        <td>${escapeHtml(task.customer_name || "-")}</td>
+        <td>${escapeHtml(task.job_name || "-")}</td>
+        <td>${escapeHtml(task.material_name || "-")}</td>
+        <td>${formatNumber(task.part_count)}</td>
+        <td>${formatNumber(task.area_m2)}</td>
+        <td><span class="production-badge">${escapeHtml(productionStatusLabel(task.status))}</span></td>
+        <td>${escapeHtml(task.operator_name || "-")}</td>
+        <td>${escapeHtml(task.problem_note || "-")}</td>
+        <td class="production-actions">
+          ${canStart ? `<button data-production-action="start" data-id="${task.id}" type="button">Start</button>` : ""}
+          ${canFinish ? `<button data-production-action="finish" data-id="${task.id}" type="button">Zakończ</button>` : ""}
+          ${canProblem ? `<button class="danger" data-production-action="problem" data-id="${task.id}" type="button">Problem</button>` : ""}
+          ${task.status === "Zakończone" ? `<button class="secondary" data-production-action="reopen" data-id="${task.id}" type="button">Otwórz ponownie</button>` : ""}
+        </td>
+      </tr>
+    `;
+  }).join("") || `<tr><td colspan="11" class="hint">Brak zadań dla stanowiska ${escapeHtml(state.productionStation)}.</td></tr>`;
+  elements.productionTasksBody.querySelectorAll("[data-production-action]").forEach((button) => {
+    button.addEventListener("click", () => runProductionAction(button));
+  });
+}
+
+function productionStatusClass(status) {
+  if (status === "W trakcie") return "active";
+  if (status === "Problem") return "problem";
+  if (status === "Zakończone") return "done";
+  return "waiting";
+}
+
+function productionStatusLabel(status) {
+  return status === "Oczekuje" ? "W przygotowaniu" : status;
+}
+
+async function runProductionAction(button) {
+  const action = button.dataset.productionAction;
+  const operator = elements.productionOperator?.value.trim() || "";
+  let note = "";
+  if (action === "problem") {
+    note = window.prompt("Opisz problem na stanowisku:")?.trim() || "";
+    if (!note) return;
+  }
+  if (action !== "reopen" && !operator) {
+    elements.productionOperator?.focus();
+    return showToast("Podaj operatora");
+  }
+  await postJson(`/api/production/tasks/${button.dataset.id}/action`, {
+    action,
+    operator_name: operator,
+    note
+  });
+  await Promise.all([refreshProduction(), refreshCrm(), refreshCutting()]);
+  showToast(action === "finish" ? "Zadanie zakończone" : "Status stanowiska zapisany");
+}
+
+async function refreshProductionCosts() {
+  if (!elements.productionCostsCards) return;
+  renderProductionAnalyticsFilters();
+  renderProductionAnalyticsFilterInfo();
+  try {
+    state.productionAnalytics = await fetchJson(`/api/production/analytics${productionAnalyticsQuery()}`);
+  } catch (error) {
+    state.productionAnalytics = { totals: {}, byTechnology: [], byJob: [] };
+    renderProductionCostSettingsForm();
+    renderProductionCosts();
+    if (error.status === 404) {
+      showToast("Analiza produkcji nie jest dostepna w tej kopii. Zamknij program i uruchom go ponownie.");
+    } else {
+      showToast(error.message || "Nie udalo sie pobrac analizy produkcji");
+    }
+    return;
+  }
+  renderProductionCostSettingsForm();
+  renderProductionCosts();
+}
+
+function readProductionAnalyticsFiltersFromForm() {
+  return {
+    order_id: elements.productionAnalyticsOrderFilter?.value || "",
+    month: elements.productionAnalyticsMonthFilter?.value || ""
+  };
+}
+
+function productionAnalyticsQuery() {
+  const filters = state.productionAnalyticsFilters || {};
+  const params = new URLSearchParams();
+  if (filters.order_id) params.set("order_id", filters.order_id);
+  if (filters.month) params.set("month", filters.month);
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+function renderProductionAnalyticsFilters() {
+  if (elements.productionAnalyticsOrderFilter) {
+    const current = String(state.productionAnalyticsFilters?.order_id || "");
+    const options = (state.orders || []).map((order) => {
+      const label = [
+        order.order_number,
+        order.customer_name,
+        order.title
+      ].filter(Boolean).join(" - ") || `Zamowienie ${order.id}`;
+      const selected = String(order.id) === current ? " selected" : "";
+      return `<option value="${order.id}"${selected}>${escapeHtml(label)}</option>`;
+    }).join("");
+    elements.productionAnalyticsOrderFilter.innerHTML = `<option value="">Wszystkie zamowienia</option>${options}`;
+    elements.productionAnalyticsOrderFilter.value = current;
+  }
+  if (elements.productionAnalyticsMonthFilter) {
+    elements.productionAnalyticsMonthFilter.value = state.productionAnalyticsFilters?.month || "";
+  }
+}
+
+function renderProductionAnalyticsFilterInfo() {
+  if (!elements.productionAnalyticsFilterInfo) return;
+  const filters = state.productionAnalyticsFilters || {};
+  const order = filters.order_id
+    ? (state.orders || []).find((item) => String(item.id) === String(filters.order_id))
+    : null;
+  const parts = [];
+  if (order) parts.push(`zamowienie: ${order.order_number || order.id}`);
+  if (filters.month) parts.push(`miesiac: ${filters.month}`);
+  elements.productionAnalyticsFilterInfo.textContent = parts.length
+    ? `Filtr: ${parts.join(", ")}`
+    : "Filtr: wszystkie dane";
+}
+
+function readProductionCostSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PRODUCTION_COST_SETTINGS_KEY) || "{}");
+    return {
+      cnc_cost: Number(saved.cnc_cost || 0),
+      edge_cost: Number(saved.edge_cost || 0),
+      lacquer_cost: Number(saved.lacquer_cost || 0),
+      other_cost: Number(saved.other_cost || 0)
+    };
+  } catch {
+    return { cnc_cost: 0, edge_cost: 0, lacquer_cost: 0, other_cost: 0 };
+  }
+}
+
+function saveProductionCostSettings(settings) {
+  localStorage.setItem(PRODUCTION_COST_SETTINGS_KEY, JSON.stringify(settings));
+}
+
+function readProductionCostSettingsFromForm() {
+  const form = elements.productionCostSettingsForm;
+  return {
+    cnc_cost: parseDecimal(form.elements.cnc_cost.value),
+    edge_cost: parseDecimal(form.elements.edge_cost.value),
+    lacquer_cost: parseDecimal(form.elements.lacquer_cost.value),
+    other_cost: parseDecimal(form.elements.other_cost.value)
+  };
+}
+
+function renderProductionCostSettingsForm() {
+  const form = elements.productionCostSettingsForm;
+  if (!form) return;
+  const settings = readProductionCostSettings();
+  form.elements.cnc_cost.value = settings.cnc_cost || "";
+  form.elements.edge_cost.value = settings.edge_cost || "";
+  form.elements.lacquer_cost.value = settings.lacquer_cost || "";
+  form.elements.other_cost.value = settings.other_cost || "";
+}
+
+function unitCost(cost, quantity) {
+  const base = Number(quantity || 0);
+  return base > 0 ? Number(cost || 0) / base : null;
+}
+
+function formatUnitMoney(value, unit) {
+  return value === null || !Number.isFinite(value) ? "-" : `${formatMoney(value)} zl/${unit}`;
+}
+
+function renderProductionCosts() {
+  renderProductionAnalyticsFilterInfo();
+  const data = state.productionAnalytics || { totals: {}, byTechnology: [], byJob: [] };
+  const totals = data.totals || {};
+  const settings = readProductionCostSettings();
+  const cncBase = Number(totals.board_m2_actual || totals.area_m2 || 0);
+  const edgeBase = Number(totals.edge_meters_actual || totals.edge_mb || 0);
+  const lacquerBase = Number(totals.lacquer_m2 || 0);
+  const otherBase = Number(totals.other_count || 0);
+
+  if (elements.productionCostsCards) {
+    elements.productionCostsCards.innerHTML = [
+      { label: "CNC / rozkroj", value: `${formatNumber(totals.board_sheets_actual || 0)} ark. / ${formatNumber(cncBase)} m2`, note: `${formatNumber(totals.quantity || 0)} szt. formatek` },
+      { label: "Oklejarka", value: `${formatNumber(edgeBase)} mb`, note: "okleina z formatek i GibLab" },
+      { label: "Lakiernia", value: `${formatNumber(lacquerBase)} m2`, note: `${formatNumber(totals.lacquer_part_count || 0)} szt. z lakierem` },
+      { label: "Inne operacje", value: `${formatNumber(totals.milling_count || 0)} frez / ${formatNumber(totals.drilling_count || 0)} otw.`, note: `${formatNumber(totals.other_count || 0)} inne` }
+    ].map((card) => `
+      <div class="metric-card">
+        <span>${escapeHtml(card.label)}</span>
+        <strong>${escapeHtml(card.value)}</strong>
+        <small>${escapeHtml(card.note)}</small>
+      </div>
+    `).join("");
+  }
+
+  if (elements.productionUnitCosts) {
+    elements.productionUnitCosts.innerHTML = `
+      <div class="production-unit-cost-card"><span>CNC koszt / m2</span><strong>${formatUnitMoney(unitCost(settings.cnc_cost, cncBase), "m2")}</strong></div>
+      <div class="production-unit-cost-card"><span>Oklejarka koszt / mb</span><strong>${formatUnitMoney(unitCost(settings.edge_cost, edgeBase), "mb")}</strong></div>
+      <div class="production-unit-cost-card"><span>Lakiernia koszt / m2</span><strong>${formatUnitMoney(unitCost(settings.lacquer_cost, lacquerBase), "m2")}</strong></div>
+      <div class="production-unit-cost-card"><span>Inne koszt / szt.</span><strong>${formatUnitMoney(unitCost(settings.other_cost, otherBase), "szt.")}</strong></div>
+    `;
+  }
+
+  if (elements.productionTechnologySummaryBody) {
+    elements.productionTechnologySummaryBody.innerHTML = (data.byTechnology || []).map((row) => `
+      <tr>
+        <td>${escapeHtml(row.element_type || "-")}</td>
+        <td>${escapeHtml(row.technology || "-")}</td>
+        <td>${escapeHtml(row.lacquer_sides || "-")}</td>
+        <td>${formatNumber(row.quantity || 0)}</td>
+        <td>${formatNumber(row.area_m2 || 0)}</td>
+        <td>${formatNumber(row.edge_mb || 0)}</td>
+        <td>${formatNumber(row.milling_count || 0)}</td>
+        <td>${formatNumber(row.drilling_count || 0)}</td>
+        <td>${formatNumber(row.lacquer_m2 || 0)}</td>
+        <td>${formatNumber(row.other_count || 0)}</td>
+      </tr>
+    `).join("") || `<tr><td colspan="10" class="hint">Brak formatek do analizy.</td></tr>`;
+  }
+
+  if (elements.productionJobSummaryBody) {
+    elements.productionJobSummaryBody.innerHTML = (data.byJob || []).map((row) => {
+      const giblab = Number(row.board_sheets_actual || 0) > 0 || Number(row.board_m2_actual || 0) > 0
+        ? `${formatNumber(row.board_sheets_actual || 0)} ark. / ${formatNumber(row.board_m2_actual || 0)} m2`
+        : "-";
+      const edge = Number(row.edge_meters_actual || 0) > 0 ? `${formatNumber(row.edge_meters_actual)} mb` : `${formatNumber(row.edge_mb || 0)} mb`;
+      return `
+        <tr>
+          <td>${escapeHtml(row.order_number || "-")}</td>
+          <td>${escapeHtml(row.customer_name || "-")}</td>
+          <td>${escapeHtml(row.job_name || "-")}</td>
+          <td>${escapeHtml(row.material_name || "-")}</td>
+          <td>${escapeHtml(row.production_status || row.job_status || "-")}</td>
+          <td>${formatNumber(row.quantity || 0)}</td>
+          <td>${formatNumber(row.area_m2 || 0)}</td>
+          <td>${escapeHtml(giblab)}</td>
+          <td>${escapeHtml(edge)}</td>
+        </tr>
+      `;
+    }).join("") || `<tr><td colspan="9" class="hint">Brak zlecen.</td></tr>`;
+  }
 }
 
 function initializeStationName() {
@@ -764,6 +1865,48 @@ function initializeStationName() {
   updateRemaindersUrl();
 }
 
+function initializeOffcutAutoRefresh() {
+  if (elements.autoRefreshOffcuts) {
+    elements.autoRefreshOffcuts.checked = localStorage.getItem(OFFCUT_AUTO_REFRESH_KEY) === "1";
+  }
+  if (elements.offcutsRefreshInterval) {
+    const stored = localStorage.getItem(OFFCUT_REFRESH_INTERVAL_KEY) || "60";
+    const hasStoredOption = Array.from(elements.offcutsRefreshInterval.options || [])
+      .some((option) => option.value === stored);
+    elements.offcutsRefreshInterval.value = hasStoredOption ? stored : "60";
+  }
+  setupOffcutAutoRefresh();
+  renderOffcutRefreshStatus();
+}
+
+function setupOffcutAutoRefresh() {
+  if (state.offcutAutoRefreshTimer) {
+    clearInterval(state.offcutAutoRefreshTimer);
+    state.offcutAutoRefreshTimer = null;
+  }
+  if (!elements.autoRefreshOffcuts?.checked) return;
+  const seconds = Math.max(15, Number(elements.offcutsRefreshInterval?.value || 60));
+  state.offcutAutoRefreshTimer = window.setInterval(() => {
+    const offcutsActive = document.querySelector("#offcutsTab")?.classList.contains("active");
+    if (document.hidden || !offcutsActive) return;
+    refreshOffcuts({ silent: true }).catch(() => {});
+  }, seconds * 1000);
+}
+
+function renderOffcutRefreshStatus(message = "") {
+  if (!elements.offcutsRefreshStatus) return;
+  if (message) {
+    elements.offcutsRefreshStatus.textContent = message;
+    return;
+  }
+  const autoEnabled = elements.autoRefreshOffcuts?.checked;
+  const interval = elements.offcutsRefreshInterval?.value || "60";
+  const lastRefresh = state.offcutLastRefreshAt
+    ? state.offcutLastRefreshAt.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : "brak";
+  elements.offcutsRefreshStatus.textContent = `Ostatnio: ${lastRefresh}. Auto: ${autoEnabled ? `co ${interval} s` : "wylaczone"}.`;
+}
+
 function getStationName() {
   const value = elements.offcutStationName?.value || localStorage.getItem("giblabStationName") || window.location.hostname || "MAGAZYN";
   return String(value).trim().replace(/[^\p{L}\p{N}_.-]+/gu, "-").replace(/^-+|-+$/g, "") || "MAGAZYN";
@@ -772,7 +1915,7 @@ function getStationName() {
 function updateRemaindersUrl() {
   if (!elements.remaindersUrlText) return;
   const station = encodeURIComponent(getStationName());
-  elements.remaindersUrlText.textContent = `${window.location.origin.replace(/:3080$/, ':3081')}/giblab/remainders?station=${station}`;
+  elements.remaindersUrlText.textContent = `${window.location.origin}/giblab/remainders?station=${station}`;
 }
 
 async function refreshCrm() {
@@ -792,14 +1935,26 @@ async function refreshCrm() {
   renderPayerCustomerSelect();
   renderQuoteOrderSelect();
   renderCutOrderSelect();
+  renderProductionAnalyticsFilters();
+  renderProductionAnalyticsFilterInfo();
   renderOrders();
   renderCalendar();
   renderDashboard();
 }
 
 async function refreshPricing() {
-  state.priceItems = await fetchJson("/api/price-items");
+  const [priceItems, cutTechnologyPrices] = await Promise.all([
+    fetchJson("/api/price-items"),
+    fetchJson("/api/cut-technology-prices")
+  ]);
+  state.priceItems = priceItems;
+  state.cutTechnologyPrices = cutTechnologyPrices;
   renderPriceItems();
+  renderCutTechnologyPriceTemplateSelect();
+  renderCutTechnologyPrices();
+  fillTemplateSelect(elements.cutPreviewTemplate, "Szablon technologii");
+  fillTemplateSelect(elements.cutPartsTemplateSelect, "Szablon dla zaznaczonych");
+  fillTemplateSelect(elements.cutPartEditorForm?.elements.technology_template, "Szablon technologii");
   renderPriceItemSelect();
   renderCutServicePriceSelect();
   if (state.selectedOrderId) await loadQuoteLines(state.selectedOrderId);
@@ -868,6 +2023,7 @@ async function refreshCutting() {
 async function loadCutParts(jobId) {
   state.cutParts = await fetchJson(`/api/cut-jobs/${jobId}/parts`);
   state.cutQuoteLines = await fetchJson(`/api/cut-jobs/${jobId}/quote-lines`);
+  renderCutSourcePreview(currentCutJobSource());
   renderCutParts();
   renderCutTotals();
   renderCutQuoteLines();
@@ -887,7 +2043,7 @@ async function refreshOffcutStorageLocations() {
       <td>${row.active ? "tak" : "nie"}</td>
       <td>
         <button type="button" data-action="edit">Edytuj</button>
-        <button type="button" class="danger" data-action="delete">UsuÄąâ€ž</button>
+        <button type="button" class="danger" data-action="delete">Usuń</button>
       </td>
     </tr>
   `).join("");
@@ -903,8 +2059,14 @@ async function refreshOffcutStorageLocations() {
   });
 }
 
-async function refreshOffcuts() {
+async function refreshOffcuts(options = {}) {
+  if (!elements.offcutsBody) return;
+  if (state.offcutRefreshInFlight) return;
+  state.offcutRefreshInFlight = true;
+  renderOffcutRefreshStatus("Odswiezam resztki...");
+  try {
   state.offcuts = await fetchJson("/api/offcuts");
+  refreshGibLabProjectSyncStatus({ silent: true }).catch(() => {});
   elements.offcutsBody.innerHTML = state.offcuts.map((row) => `
     <tr class="material-row ${String(row.id) === String(state.selectedOffcutId) ? "selected-row" : ""}" data-id="${escapeHtml(row.id)}">
       <td>${escapeHtml(row.id)}</td>
@@ -912,7 +2074,7 @@ async function refreshOffcuts() {
       <td>${formatNumber(row.length)}</td>
       <td>${formatNumber(row.width)}</td>
       <td>${formatNumber(row.quantity)}</td>
-      <td>${row.is_business ? "delowa" : "zwykÄąâ€ša"}</td>
+      <td>${row.is_business ? "delowa" : "zwykła"}</td>
       <td>${escapeHtml(row.project_name)}</td>
       <td>${escapeHtml(row.storage_location || "")}</td>
       <td>${formatOffcutStatus(row)}</td>
@@ -923,9 +2085,39 @@ async function refreshOffcuts() {
   elements.offcutsBody.querySelectorAll("tr").forEach((rowElement) => {
     rowElement.addEventListener("click", () => {
       state.selectedOffcutId = rowElement.dataset.id;
-      refreshOffcuts();
+      refreshOffcuts({ silent: true });
     });
   });
+  state.offcutLastRefreshAt = new Date();
+  renderOffcutRefreshStatus();
+  } catch (error) {
+    renderOffcutRefreshStatus("Nie udalo sie odswiezyc resztek");
+    if (!options.silent) showToast(error.message || "Nie udalo sie odswiezyc resztek");
+    throw error;
+  } finally {
+    state.offcutRefreshInFlight = false;
+  }
+}
+
+async function refreshGibLabProjectSyncStatus(options = {}) {
+  if (!elements.giblabProjectSyncStatus) return;
+  try {
+    const data = await fetchJson("/api/giblab-project-sync/status");
+    renderGibLabProjectSyncStatus(data);
+  } catch (error) {
+    if (!options.silent) showToast(error.message || "Nie udalo sie odczytac statusu GibLab");
+  }
+}
+
+function renderGibLabProjectSyncStatus(data = {}) {
+  if (!elements.giblabProjectSyncStatus) return;
+  if (!data.enabled) {
+    elements.giblabProjectSyncStatus.textContent = "Automatyczne pobieranie wynikow GibLab jest wylaczone.";
+    return;
+  }
+  const latest = Array.isArray(data.rows) ? data.rows[0] : null;
+  const details = latest ? `${latest.status}: ${latest.project_path || ""}` : "czeka na nowy plik ZAM-*.project";
+  elements.giblabProjectSyncStatus.textContent = `Monitor GibLab dziala co ${data.intervalSeconds || 30} s. Folder: ${data.folder || "-"}. Ostatni stan: ${details}`;
 }
 
 function renderTree() {
@@ -942,6 +2134,7 @@ function renderTree() {
   elements.tree.querySelectorAll(".tree-name").forEach((node) => {
     node.addEventListener("click", () => {
       const id = Number(node.dataset.id);
+      if (applyMaterialToActiveWarehouseForm(id)) return;
       if (document.querySelector("#cuttingTab").classList.contains("active")) applyCutPartMaterial(id);
       else fillMaterialForm(id);
     });
@@ -949,17 +2142,51 @@ function renderTree() {
 }
 
 function renderTreeRows(rows, depth = 0) {
-  return rows.map((row) => {
-    const hasChildren = Boolean(row.children?.length);
+  const showMaterialLeaves = shouldShowMaterialLeavesInTree();
+  return rows.filter((row) => isVisibleCatalogRow(row) && (row.isfolder || showMaterialLeaves)).map((row) => {
+    const visibleChildren = (row.children || []).filter((child) => isVisibleCatalogRow(child) && (child.isfolder || showMaterialLeaves));
+    const hasChildren = visibleChildren.length > 0;
     const collapsed = state.collapsed.has(row.id);
     return `
-    <div class="tree-row ${row.isfolder ? "folder" : ""}" style="padding-left:${depth * 14}px">
-      ${hasChildren ? `<button class="tree-toggle" data-id="${row.id}" title="${collapsed ? "RozwiÄąâ€ž" : "ZwiÄąâ€ž"}">${collapsed ? "+" : "-"}</button>` : `<span class="tree-leaf">-â‚¬Ë</span>`}
+    <div class="tree-row ${row.isfolder ? "folder" : "material"}" style="padding-left:${depth * 14}px">
+      ${hasChildren ? `<button class="tree-toggle" data-id="${row.id}" title="${collapsed ? "Rozwiń" : "Zwiń"}">${collapsed ? "+" : "−"}</button>` : `<span class="tree-leaf">•</span>`}
       <span class="tree-name" data-id="${row.id}">${escapeHtml(row.name)}</span>
     </div>
-    ${hasChildren && !collapsed ? renderTreeRows(row.children, depth + 1) : ""}
+    ${hasChildren && !collapsed ? renderTreeRows(visibleChildren, depth + 1) : ""}
   `;
   }).join("");
+}
+
+function shouldShowMaterialLeavesInTree() {
+  return Boolean(document.querySelector("#stockTab")?.classList.contains("active"));
+}
+
+function applyMaterialToActiveWarehouseForm(id) {
+  const material = state.flat.find((row) => String(row.id) === String(id));
+  if (!material || material.isfolder) return false;
+  if (document.querySelector("#stockTab")?.classList.contains("active")) {
+    fillStockMaterialForm(material.id);
+    showToast(`Wybrano material: ${stockMaterialLabel(material)}`);
+    return true;
+  }
+  return false;
+}
+
+function fillStockMaterialForm(materialId) {
+  if (!elements.stockForm) return;
+  const material = state.flat.find((row) => String(row.id) === String(materialId));
+  elements.stockForm.elements.material_id.value = materialId;
+  if (elements.stockForm.elements.event_type && !elements.stockForm.elements.event_type.value) {
+    elements.stockForm.elements.event_type.value = "receive";
+  }
+  if (material && elements.stockForm.elements.note && !elements.stockForm.elements.note.value) {
+    elements.stockForm.elements.note.value = stockMaterialLabel(material);
+  }
+  elements.stockForm.elements.quantity?.focus();
+}
+
+function stockMaterialLabel(material) {
+  return [material.code, material.name].filter(Boolean).join(" - ");
 }
 
 function setTreeHidden(hidden) {
@@ -974,7 +2201,7 @@ function renderMaterials() {
       <td>${row.id}</td>
       <td class="material-name-cell">
         <span class="material-indent" style="width:${Math.max(0, row._depth || 0) * 18}px"></span>
-        ${row._hasChildren ? `<button class="material-folder-toggle" data-material-toggle="${row.id}" type="button" title="${state.materialCollapsed.has(row.id) ? "Rozwiń folder" : "Zwiń folder"}">${state.materialCollapsed.has(row.id) ? "+" : "-"}</button>` : `<span class="material-folder-spacer"></span>`}
+        ${row._hasChildren ? `<button class="material-folder-toggle" data-material-toggle="${row.id}" type="button" title="${state.materialCollapsed.has(row.id) ? "Rozwiń folder" : "Zwiń folder"}">${state.materialCollapsed.has(row.id) ? "+" : "−"}</button>` : `<span class="material-folder-spacer"></span>`}
         <span>${escapeHtml(row.name)}</span>
       </td>
       <td>${escapeHtml(row.code)}</td>
@@ -1005,15 +2232,30 @@ function renderMaterials() {
     rowElement.addEventListener("click", () => {
       state.selectedId = Number(rowElement.dataset.id);
       renderMaterials();
+      renderMaterialParentHint();
     });
   });
+  renderMaterialParentHint();
 }
 
 function materialTableRows() {
   if (hasMaterialFilters()) {
     return filteredMaterials().map((row) => ({ ...row, _depth: 0, _hasChildren: false }));
   }
-  return flattenMaterialTreeRows(state.tree);
+  return flattenVisibleMaterialTreeRows(state.tree);
+}
+
+function flattenVisibleMaterialTreeRows(rows, depth = 0) {
+  return rows.flatMap((row) => {
+    if (!isVisibleCatalogRow(row)) return [];
+    const isLegacy = isLegacyUkrainianMaterial(row);
+    const children = flattenVisibleMaterialTreeRows(row.children || [], isLegacy ? depth : depth + 1);
+    if (isLegacy) return children;
+    const hasChildren = children.length > 0;
+    const current = { ...row, _depth: depth, _hasChildren: hasChildren };
+    if (!hasChildren || state.materialCollapsed.has(row.id)) return [current];
+    return [current].concat(children);
+  });
 }
 
 function flattenMaterialTreeRows(rows, depth = 0) {
@@ -1038,6 +2280,37 @@ function renderMaterialFilters() {
   fillSimpleFilterSelect(elements.materialProducerFilter, "Producent: wszyscy", uniqueMaterialValues("producer"));
   fillSimpleFilterSelect(elements.materialThicknessFilter, "Grubość: wszystkie", uniqueMaterialValues("thickness"));
   fillSimpleFilterSelect(elements.materialTypeFilter, "Typ: wszystkie", uniqueMaterialValues("material_type"));
+  renderQuickMaterialFolderOptions();
+}
+
+function renderQuickMaterialFolderOptions() {
+  const folders = state.flat
+    .filter((row) => row.isfolder && isVisibleCatalogRow(row))
+    .sort((left, right) => materialFolderPath(left).localeCompare(materialFolderPath(right), "pl", { numeric: true }));
+  for (const form of [elements.quickMaterialFolderForm, elements.quickMaterialForm]) {
+    const select = form?.elements.paren_id;
+    if (!select) continue;
+    const current = select.value;
+    const placeholder = form === elements.quickMaterialFolderForm
+      ? "Gdzie dodać folder / producenta"
+      : "Folder docelowy";
+    select.innerHTML = `<option value="">${placeholder}</option>` + folders
+      .map((row) => `<option value="${row.id}">${escapeHtml(materialFolderPath(row))}</option>`)
+      .join("");
+    if (folders.some((row) => String(row.id) === current)) select.value = current;
+  }
+}
+
+function materialFolderPath(folder) {
+  const names = [];
+  const visited = new Set();
+  let current = folder;
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id);
+    names.unshift(current.name);
+    current = state.flat.find((row) => Number(row.id) === Number(current.paren_id));
+  }
+  return names.join(" / ");
 }
 
 function fillSimpleFilterSelect(select, label, values) {
@@ -1051,7 +2324,7 @@ function fillSimpleFilterSelect(select, label, values) {
 
 function uniqueMaterialValues(field) {
   return [...new Set(state.flat
-    .filter((row) => !row.isfolder)
+    .filter((row) => !row.isfolder && isVisibleCatalogRow(row))
     .map((row) => row[field] === null || row[field] === undefined ? "" : String(row[field]).trim())
     .filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, "pl", { numeric: true }));
@@ -1063,6 +2336,7 @@ function filteredMaterials() {
   const thickness = String(elements.materialThicknessFilter?.value || "");
   const type = String(elements.materialTypeFilter?.value || "");
   return state.flat.filter((row) => {
+    if (!isVisibleCatalogRow(row)) return false;
     if (producer && String(row.producer || "") !== producer) return false;
     if (thickness && String(row.thickness ?? "") !== thickness) return false;
     if (type && String(row.material_type || "") !== type) return false;
@@ -1100,11 +2374,36 @@ function selectedMaterialFolderId() {
   return selected.isfolder ? selected.id : selected.paren_id || null;
 }
 
+function selectedMaterialFolderLabel() {
+  const parentId = selectedMaterialFolderId();
+  if (!parentId) return "";
+  const parent = state.flat.find((row) => Number(row.id) === Number(parentId));
+  return parent ? `${parent.name} (ID ${parent.id})` : `ID ${parentId}`;
+}
+
+function renderMaterialParentHint() {
+  if (!elements.materialParentHint) return;
+  const selected = state.flat.find((row) => Number(row.id) === Number(state.selectedId));
+  if (!selected) {
+    elements.materialParentHint.textContent = "Zaznacz folder lub materiał, aby dodać folder w tym miejscu.";
+    return;
+  }
+  const parentLabel = selectedMaterialFolderLabel();
+  if (selected.isfolder) {
+    elements.materialParentHint.textContent = `Nowy folder zostanie dodany do: ${selected.name} (ID ${selected.id}).`;
+  } else if (parentLabel) {
+    elements.materialParentHint.textContent = `Nowy folder zostanie dodany obok materiału, w folderze: ${parentLabel}.`;
+  } else {
+    elements.materialParentHint.textContent = "Ten materiał jest na głównym poziomie. Nowy folder będzie główny.";
+  }
+}
+
 function renderStock() {
   elements.stockBody.innerHTML = state.flat
-    .filter((row) => !row.isfolder)
+    .filter((row) => !row.isfolder && isVisibleCatalogRow(row))
+    .filter((row) => !elements.hideZeroStock?.checked || Number(row.quantity || 0) !== 0 || Number(row.reserved || 0) !== 0 || Number(row.available || 0) !== 0 || Number(row.used || 0) !== 0)
     .map((row) => `
-      <tr>
+      <tr data-stock-row="${row.id}">
         <td>${row.id}</td>
         <td>${escapeHtml(row.code)}</td>
         <td>${escapeHtml(row.name)}</td>
@@ -1116,6 +2415,12 @@ function renderStock() {
         <td><button class="small" data-stock-adjust="${row.id}" type="button">Koryguj</button></td>
       </tr>
     `).join("");
+  elements.stockBody.querySelectorAll("[data-stock-row]").forEach((rowElement) => {
+    rowElement.addEventListener("click", (event) => {
+      if (event.target.closest("button")) return;
+      fillStockMaterialForm(rowElement.dataset.stockRow);
+    });
+  });
   elements.stockBody.querySelectorAll("[data-stock-history]").forEach((button) => {
     button.addEventListener("click", () => showStockHistory(Number(button.dataset.stockHistory)));
   });
@@ -1125,7 +2430,7 @@ function renderStock() {
       elements.stockForm.elements.event_type.value = "adjust";
       elements.stockForm.elements.material_id.value = button.dataset.stockAdjust;
       elements.stockForm.elements.quantity.value = material?.quantity ?? "";
-      elements.stockForm.elements.note.value = "Korekta rĂ„â„˘czna";
+      elements.stockForm.elements.note.value = "Korekta ręczna";
       elements.stockForm.elements.quantity.focus();
       elements.stockForm.elements.quantity.select?.();
     });
@@ -1167,7 +2472,7 @@ function renderMaterialImportSummary(summary, result, visibleRows = null) {
   if (!elements.materialImportSummary) return;
   if (result) {
     elements.materialImportSummary.textContent =
-      `Import: dodano ${result.added}, zaktualizowano ${result.updated}, pominiĂ„â„˘to ${result.skipped}, niezaznaczone ${result.skipped_unselected || 0}, bÄąâ€šĂ„â„˘dy ${result.errors?.length || 0}.`;
+      `Import: dodano ${result.added}, zaktualizowano ${result.updated}, pominięto ${result.skipped}, niezaznaczone ${result.skipped_unselected || 0}, błędy ${result.errors?.length || 0}.`;
     return;
   }
   const activeRows = state.materialImportRows || [];
@@ -1175,11 +2480,11 @@ function renderMaterialImportSummary(summary, result, visibleRows = null) {
     summary = summarizeMaterialImportRows(activeRows, visibleRows || filterMaterialImportRows(activeRows, elements.materialImportFilter?.value || "all"));
   }
   if (!summary || !summary.total) {
-    elements.materialImportSummary.textContent = "Import aktualizuje tylko katalog materiałÄ‚Ĺ‚w. Stany magazynowe i historia stanÄ‚Ĺ‚w nie sĂ„â€¦ zmieniane.";
+    elements.materialImportSummary.textContent = "Import aktualizuje tylko katalog materiałów. Stany magazynowe i historia stanów nie są zmieniane.";
     return;
   }
   elements.materialImportSummary.textContent =
-    `Razem ${summary.total}, widoczne ${summary.visible ?? summary.total}, zaznaczone ${summary.selected || 0}, poprawne ${summary.valid}, bÄąâ€šĂ„â„˘dne ${summary.invalid}, nowe ${summary.new}, istniejĂ„â€¦ce ${summary.existing}, duplikaty ${summary.duplicates}, ostrzeÄąÄ˝enia ${summary.warnings}.`;
+    `Razem ${summary.total}, widoczne ${summary.visible ?? summary.total}, zaznaczone ${summary.selected || 0}, poprawne ${summary.valid}, błędne ${summary.invalid}, nowe ${summary.new}, istniejące ${summary.existing}, duplikaty ${summary.duplicates}, ostrzeżenia ${summary.warnings}.`;
 }
 
 async function previewMaterialCatalogImport() {
@@ -1190,7 +2495,7 @@ async function previewMaterialCatalogImport() {
   const result = await fetchJson("/api/materials/import-preview", { method: "POST", body: form });
   state.materialImportRows = (result.rows || []).map((row) => ({ ...row, selected: Boolean(row.valid) }));
   renderMaterialImportPreview();
-  showToast(`PodglĂ„â€¦d importu: ${result.summary?.total || 0} wierszy`);
+  showToast(`Podgląd importu: ${result.summary?.total || 0} wierszy`);
 }
 
 async function commitMaterialCatalogImport() {
@@ -1237,7 +2542,7 @@ function summarizeMaterialImportRows(rows, visibleRows = rows) {
 
 async function showStockHistory(materialId) {
   const material = state.flat.find((row) => Number(row.id) === materialId);
-  elements.stockHistoryPanel.textContent = "LadujĂ„â„˘ historiĂ„â„˘...";
+  elements.stockHistoryPanel.textContent = "Laduję historię...";
   try {
     const events = await fetchJson(`/api/stock/${materialId}/events`);
     const title = `${material?.code || materialId} ${material?.name || ""}`.trim();
@@ -1252,7 +2557,7 @@ async function showStockHistory(materialId) {
       ` : "<div>Brak historii dla tego materiału.</div>"}
     `;
   } catch (error) {
-    elements.stockHistoryPanel.textContent = error.message || "Nie udaÄąâ€šo siĂ„â„˘ pobraĂ„â€ˇ historii";
+    elements.stockHistoryPanel.textContent = error.message || "Nie udało się pobrać historii";
   }
 }
 
@@ -1275,7 +2580,11 @@ function renderCustomers() {
   }).join("");
   elements.customersBody.querySelectorAll("tr").forEach((rowElement) => {
     rowElement.addEventListener("click", async () => {
-      state.selectedCustomerId = Number(rowElement.dataset.id);
+      const customerId = Number(rowElement.dataset.id);
+      state.selectedCustomerId = customerId;
+      if (state.editingCustomerId && Number(state.editingCustomerId) !== customerId) {
+        setCustomerEditMode(null);
+      }
       renderCustomers();
       await loadCustomerRelatedDocs(state.selectedCustomerId);
     });
@@ -1284,7 +2593,7 @@ function renderCustomers() {
 
 function formatOffcutStatus(row) {
   if (row.status === "reserved") return `zarezerwowana: ${escapeHtml(row.reserved_by || "")}`;
-  if (row.status === "used") return `zuÄąÄ˝yta: ${escapeHtml(row.used_by || "")}`;
+  if (row.status === "used") return `zużyta: ${escapeHtml(row.used_by || "")}`;
   return "wolna";
 }
 
@@ -1306,8 +2615,8 @@ function renderCustomerRelatedDocs() {
     return;
   }
   if (!state.customerRelatedDocs.length) {
-    elements.customerDocsBody.innerHTML = `<tr><td colspan="8">Brak powiĂ„â€¦zanych dokumentÄ‚Ĺ‚w dla klienta ${escapeHtml(selectedCustomer.name)}.</td></tr>`;
-    if (elements.customerDocsStatus) elements.customerDocsStatus.textContent = "Tego klienta moÄąÄ˝na usunĂ„â€¦Ă„â€ˇ caÄąâ€škowicie.";
+    elements.customerDocsBody.innerHTML = `<tr><td colspan="8">Brak powiązanych dokumentów dla klienta ${escapeHtml(selectedCustomer.name)}.</td></tr>`;
+    if (elements.customerDocsStatus) elements.customerDocsStatus.textContent = "Tego klienta można usunąć całkowicie.";
     state.selectedCustomerDocIndex = null;
     return;
   }
@@ -1317,7 +2626,7 @@ function renderCustomerRelatedDocs() {
       : "";
     const isSelected = Number(state.selectedCustomerDocIndex) === index;
     const orderBundleButton = row.type === "order" && !row.can_delete
-      ? `<button type="button" class="danger" data-delete-order-bundle-index="${index}">UsuÄąâ€ž komplet</button>`
+      ? `<button type="button" class="danger" data-delete-order-bundle-index="${index}">Usuń komplet</button>`
       : "";
     return `
       <tr class="material-row ${isSelected ? "selected-row" : ""}" data-index="${index}">
@@ -1328,7 +2637,7 @@ function renderCustomerRelatedDocs() {
         <td>${formatMoney(row.value || 0)}</td>
         <td>${row.can_delete ? "tak" : "nie"}</td>
         <td>${blockers}</td>
-        <td>${row.can_delete ? `<button type="button" class="danger" data-delete-doc-index="${index}">UsuÄąâ€ž</button>` : ""}${orderBundleButton}</td>
+        <td>${row.can_delete ? `<button type="button" class="danger" data-delete-doc-index="${index}">Usuń</button>` : ""}${orderBundleButton}</td>
       </tr>
     `;
   }).join("");
@@ -1352,7 +2661,7 @@ function renderCustomerRelatedDocs() {
   const deletableCount = state.customerRelatedDocs.filter((row) => row.can_delete).length;
   const blockedCount = state.customerRelatedDocs.length - deletableCount;
   if (elements.customerDocsStatus) {
-    elements.customerDocsStatus.textContent = `Dokumenty: ${state.customerRelatedDocs.length}, moÄąÄ˝na usunĂ„â€¦Ă„â€ˇ: ${deletableCount}, zablokowane: ${blockedCount}`;
+    elements.customerDocsStatus.textContent = `Dokumenty: ${state.customerRelatedDocs.length}, można usunąć: ${deletableCount}, zablokowane: ${blockedCount}`;
   }
 }
 
@@ -1373,8 +2682,6 @@ function renderPayerCustomerSelect() {
   `).join("");
   select.value = currentValue;
 }
-
-
 
 function renderQuoteOrderSelect() {
   const select = elements.quoteLineForm.elements.order_id;
@@ -1403,7 +2710,7 @@ function renderCutServicePriceSelect() {
     !looksLikeMaterialPrice(item) && allowedServiceCodes.has(String(item.code || "").toUpperCase())
   );
   select.innerHTML = `<option value="">Cena usługi z cennika</option>` + serviceItems.map((item) => `
-    <option value="${item.id}">${escapeHtml(item.category || "UsÄąâ€šuga")} | ${escapeHtml(item.name)} / ${formatMoney(item.unit_price)} ${escapeHtml(item.unit)}</option>
+    <option value="${item.id}">${escapeHtml(item.category || "Usługa")} | ${escapeHtml(item.name)} / ${formatMoney(item.unit_price)} ${escapeHtml(item.unit)}</option>
   `).join("");
   if (serviceItems.some((item) => String(item.id) === currentValue)) select.value = currentValue;
 }
@@ -1432,6 +2739,41 @@ function renderPriceItems() {
   });
 }
 
+function renderCutTechnologyPriceTemplateSelect() {
+  if (!elements.cutTechnologyPriceForm?.elements.template_key) return;
+  const select = elements.cutTechnologyPriceForm.elements.template_key;
+  const currentValue = select.value;
+  select.innerHTML = `<option value="">Wybierz gotowy szablon</option>
+    <option value="__custom__">+ NOWY WŁASNY SZABLON</option>` + allCutTechnologyTemplates().map((template) => `
+    <option value="${escapeHtml(template.key)}">${escapeHtml(template.name)}</option>
+  `).join("");
+  if (allCutTechnologyTemplates().some((template) => template.key === currentValue)) select.value = currentValue;
+}
+
+function renderCutTechnologyPrices() {
+  if (!elements.cutTechnologyPricesBody) return;
+  const rows = [...state.cutTechnologyPrices].sort((a, b) => Number(a.id) - Number(b.id));
+  elements.cutTechnologyPricesBody.innerHTML = rows.map((row) => `
+    <tr class="material-row ${String(row.id) === String(state.selectedCutTechnologyPriceId) ? "selected-row" : ""}" data-id="${row.id}">
+      <td>${row.id}</td>
+      <td>${escapeHtml(row.template_key)}</td>
+      <td>${escapeHtml(row.name)}</td>
+      <td>${escapeHtml(row.element_type)}</td>
+      <td>${escapeHtml(row.technology)}</td>
+      <td>${escapeHtml(row.lacquer_sides)}</td>
+      <td>${escapeHtml(technologyUnitLabel(row.unit))}</td>
+      <td>${row.unit === "none" ? "-" : formatMoney(row.unit_price)}</td>
+      <td>${escapeHtml(row.notes)}</td>
+    </tr>
+  `).join("");
+  elements.cutTechnologyPricesBody.querySelectorAll("tr").forEach((rowElement) => {
+    rowElement.addEventListener("click", () => {
+      state.selectedCutTechnologyPriceId = Number(rowElement.dataset.id);
+      renderCutTechnologyPrices();
+    });
+  });
+}
+
 function renderSupplies() {
   if (!elements.suppliesBody) return;
   elements.suppliesBody.innerHTML = state.supplies.map((row) => `
@@ -1444,7 +2786,7 @@ function renderSupplies() {
       <td>${formatMoney(row.price)}</td>
       <td>${formatNumber(row.quantity)}</td>
       <td>${escapeHtml(row.notes)}</td>
-      <td><button class="small danger" data-delete-supply="${row.id}" type="button">UsuÄąâ€ž</button></td>
+      <td><button class="small danger" data-delete-supply="${row.id}" type="button">Usuń</button></td>
     </tr>
   `).join("");
   elements.suppliesBody.querySelectorAll("tr").forEach((rowElement) => {
@@ -1461,7 +2803,7 @@ function renderSupplies() {
         elements.supplyForm?.reset();
       }
       await refreshSupplies();
-      showToast("Pozycja usuniĂ„â„˘ta");
+      showToast("Pozycja usunięta");
     });
   });
 }
@@ -1472,7 +2814,15 @@ function renderDeliveryMaterialSelect() {
   if (!select && !correctionSelect) return;
   const currentValue = select?.value || "";
   const correctionValue = correctionSelect?.value || "";
-  const materials = state.flat.filter((row) => !row.isfolder);
+  const search = normalizeText(elements.deliveryMaterialSearch?.value || "");
+  const allMaterials = state.flat.filter((row) => !row.isfolder && isVisibleCatalogRow(row));
+  let materials = allMaterials.filter((material) => deliveryMaterialMatchesSearch(material, search));
+  [currentValue, correctionValue].filter(Boolean).forEach((id) => {
+    if (!materials.some((material) => String(material.id) === String(id))) {
+      const selectedMaterial = allMaterials.find((material) => String(material.id) === String(id));
+      if (selectedMaterial) materials = [selectedMaterial, ...materials];
+    }
+  });
   const options = `<option value="">Wybierz materiał</option>` + materials.map((material) => `
     <option value="${material.id}">${escapeHtml([material.code, material.name].filter(Boolean).join(" - "))}</option>
   `).join("");
@@ -1486,13 +2836,31 @@ function renderDeliveryMaterialSelect() {
   }
 }
 
+function deliveryMaterialMatchesSearch(material, search) {
+  if (!search) return true;
+  const text = normalizeText([
+    material.id,
+    material.code,
+    material.name,
+    material.producer,
+    material.material_type,
+    material.decor_code,
+    material.decor_name,
+    material.structure,
+    material.thickness,
+    material.length,
+    material.width
+  ].filter(Boolean).join(" "));
+  return text.includes(search);
+}
+
 function renderPurchaseNeeds() {
   if (!elements.purchaseNeedsBody) return;
   const rows = state.purchaseNeeds.rows || [];
   const summary = state.purchaseNeeds.summary || {};
   elements.purchaseNeedsSummary.textContent = rows.length
     ? `Do zamówienia: ${rows.length} pozycji, razem ${formatNumber(summary.total_order_quantity)} jednostek.`
-    : "Brak materiałÄ‚Ĺ‚w poniÄąÄ˝ej minimum magazynowego.";
+    : "Brak materiałów poniżej minimum magazynowego.";
   elements.purchaseNeedsBody.innerHTML = rows.length
     ? rows.map((row) => `
       <tr class="stock-alert">
@@ -1511,16 +2879,16 @@ function renderPurchaseNeeds() {
         <td>${escapeHtml(row.location || "")}</td>
       </tr>
     `).join("")
-    : `<tr><td colspan="13">Wszystkie aktywne materiały sĂ„â€¦ na poziomie minimum albo powyÄąÄ˝ej.</td></tr>`;
+    : `<tr><td colspan="13">Wszystkie aktywne materiały są na poziomie minimum albo powyżej.</td></tr>`;
 }
 
 function buildPurchaseNeedsTelegramText(rows) {
   const lines = rows.map((row) => {
     const material = [row.code, row.name].filter(Boolean).join(" - ");
     const supplier = row.supplier ? ` | ${row.supplier}` : "";
-    return `${material}: zamÄ‚Ĺ‚wiĂ„â€ˇ ${formatNumber(row.order_quantity)} ${row.unit || ""}${supplier}`;
+    return `${material}: zamówić ${formatNumber(row.order_quantity)} ${row.unit || ""}${supplier}`;
   });
-  return [`Lista zakupÄ‚Ĺ‚w (${rows.length})`, ...lines].join("\n");
+  return [`Lista zakupów (${rows.length})`, ...lines].join("\n");
 }
 
 function renderBackups() {
@@ -1533,11 +2901,11 @@ function renderBackups() {
         <td>${escapeHtml(formatBackupDate(backup.created_at))}</td>
         <td>
           <button class="small" data-download-backup="${escapeHtml(backup.filename)}" type="button">Pobierz</button>
-          <button class="small danger" data-restore-backup="${escapeHtml(backup.filename)}" type="button">PrzywrÄ‚Ĺ‚Ă„â€ˇ</button>
+          <button class="small danger" data-restore-backup="${escapeHtml(backup.filename)}" type="button">Przywróć</button>
         </td>
       </tr>
     `).join("")
-    : `<tr><td colspan="4">Brak backupÄ‚Ĺ‚w.</td></tr>`;
+    : `<tr><td colspan="4">Brak backupów.</td></tr>`;
   elements.backupsBody.querySelectorAll("[data-download-backup]").forEach((button) => {
     button.addEventListener("click", () => {
       window.location.href = `/api/backups/${encodeURIComponent(button.dataset.downloadBackup)}/download`;
@@ -1545,11 +2913,11 @@ function renderBackups() {
   });
   elements.backupsBody.querySelectorAll("[data-restore-backup]").forEach((button) => {
     button.addEventListener("click", async () => {
-      const ok = confirm("PrzywrÄ‚Ĺ‚cenie backupu zastĂ„â€¦pi aktualnĂ„â€¦ bazĂ„â„˘ danych. Przed przywrÄ‚Ĺ‚ceniem program utworzy kopiĂ„â„˘ bezpieczeÄąâ€žstwa. KontynuowaĂ„â€ˇ?");
+      const ok = confirm("Przywrócenie backupu zastąpi aktualną bazę danych. Przed przywróceniem program utworzy kopię bezpieczeństwa. Kontynuować?");
       if (!ok) return;
       const result = await postJson(`/api/backups/${encodeURIComponent(button.dataset.restoreBackup)}/restore`, {});
-      elements.backupStatus.textContent = `${result.message} Backup przed przywrÄ‚Ĺ‚ceniem: ${result.pre_restore_backup}`;
-      showToast("Backup przywrÄ‚Ĺ‚cony. Zrestartuj program.");
+      elements.backupStatus.textContent = `${result.message} Backup przed przywróceniem: ${result.pre_restore_backup}`;
+      showToast("Backup przywrócony. Zrestartuj program.");
     });
   });
 }
@@ -1612,14 +2980,14 @@ function renderDeliveryLines() {
       <td>${escapeHtml(row.material_name || "")}</td>
       <td>${formatNumber(row.quantity)}</td>
       <td>${formatMoney(row.unit_price)}</td>
-      <td>${delivery?.status === "posted" ? "" : `<button class="small danger" data-delete-delivery-line="${row.id}" type="button">UsuÄąâ€ž</button>`}</td>
+      <td>${delivery?.status === "posted" ? "" : `<button class="small danger" data-delete-delivery-line="${row.id}" type="button">Usuń</button>`}</td>
     </tr>
   `).join("");
   elements.deliveryLinesBody.querySelectorAll("[data-delete-delivery-line]").forEach((button) => {
     button.addEventListener("click", async () => {
       await fetchJson(`/api/delivery-lines/${button.dataset.deleteDeliveryLine}`, { method: "DELETE" });
       await refreshDeliveries();
-      showToast("Pozycja dostawy usuniĂ„â„˘ta");
+      showToast("Pozycja dostawy usunięta");
     });
   });
   updateDeliveryStatusText();
@@ -1652,14 +3020,14 @@ function renderDeliveryCorrectionLines() {
       <td>${escapeHtml(row.material_name || "")}</td>
       <td>${formatNumber(row.quantity_delta)}</td>
       <td>${formatMoney(row.unit_price_net)}</td>
-      <td>${correction?.status === "draft" ? `<button class="small danger" data-delete-correction-line="${row.id}" type="button">UsuÄąâ€ž</button>` : ""}</td>
+      <td>${correction?.status === "draft" ? `<button class="small danger" data-delete-correction-line="${row.id}" type="button">Usuń</button>` : ""}</td>
     </tr>
   `).join("");
   elements.deliveryCorrectionLinesBody.querySelectorAll("[data-delete-correction-line]").forEach((button) => {
     button.addEventListener("click", async () => {
       await fetchJson(`/api/delivery-correction-lines/${button.dataset.deleteCorrectionLine}`, { method: "DELETE" });
       await refreshDeliveries();
-      showToast("Pozycja korekty usuniĂ„â„˘ta");
+      showToast("Pozycja korekty usunięta");
     });
   });
   updateDeliveryCorrectionStatusText();
@@ -1724,12 +3092,12 @@ function updateDeliveryStatusText() {
   if (!elements.deliveryStatus) return;
   const delivery = currentDelivery();
   if (!delivery) {
-    elements.deliveryStatus.textContent = "UtwÄ‚Ĺ‚rz albo wybierz dostawę. Szkic nie zmienia magazynu.";
+    elements.deliveryStatus.textContent = "Utwórz albo wybierz dostawę. Szkic nie zmienia magazynu.";
     return;
   }
   elements.deliveryStatus.textContent = delivery.status === "posted"
-    ? `Dostawa ${delivery.id} jest zaksiĂ„â„˘gowana. Stany zostaÄąâ€šy zwiĂ„â„˘kszone, a historia magazynu zapisana.`
-    : `Dostawa ${delivery.id} jest szkicem. Stan roÄąâ€şnie dopiero po klikniĂ„â„˘ciu -â‚¬ĹľZaksiĂ„â„˘guj dostawę-â‚¬ĹĄ.`;
+    ? `Dostawa ${delivery.id} jest zaksięgowana. Stany zostały zwiększone, a historia magazynu zapisana.`
+    : `Dostawa ${delivery.id} jest szkicem. Stan rośnie dopiero po kliknięciu „Zaksięguj dostawę”.`;
 }
 
 function updateDeliveryCorrectionStatusText() {
@@ -1740,8 +3108,8 @@ function updateDeliveryCorrectionStatusText() {
     return;
   }
   elements.deliveryCorrectionStatus.textContent = correction.status === "posted"
-    ? `Korekta ${correction.id} jest zaksiĂ„â„˘gowana. Historia magazynu zostaÄąâ€ša zapisana.`
-    : `Korekta ${correction.id} jest szkicem. Ujemna delta zuÄąÄ˝yje tylko dostĂ„â„˘pny stan, bez naruszania rezerwacji.`;
+    ? `Korekta ${correction.id} jest zaksięgowana. Historia magazynu została zapisana.`
+    : `Korekta ${correction.id} jest szkicem. Ujemna delta zużyje tylko dostępny stan, bez naruszania rezerwacji.`;
 }
 
 function renderQuoteLines() {
@@ -1749,7 +3117,7 @@ function renderQuoteLines() {
   const order = state.orders.find((row) => String(row.id) === String(elements.quoteLineForm.elements.order_id.value));
   const balance = total - Number(order?.paid_amount || 0);
   elements.quoteSummary.textContent = order
-    ? `Zamówienie ${order.order_number}: ${formatMoney(total)} zł według cennika. WpÄąâ€šacono: ${formatMoney(order.paid_amount)} zł, do zapÄąâ€šaty: ${formatMoney(balance)} zł.`
+    ? `Zamówienie ${order.order_number}: ${formatMoney(total)} zł według cennika. Wpłacono: ${formatMoney(order.paid_amount)} zł, do zapłaty: ${formatMoney(balance)} zł.`
     : "Wybierz zamówienie, żeby policzyć wycenę.";
   elements.quoteLinesBody.innerHTML = state.quoteLines.map((row) => `
     <tr>
@@ -1759,7 +3127,9 @@ function renderQuoteLines() {
       <td>${escapeHtml(row.unit)}</td>
       <td>${formatMoney(row.unit_price)}</td>
       <td>${formatMoney(row.line_total)}</td>
-      <td><button class="small danger" data-delete-quote="${row.id}" type="button">UsuÄąâ€ž</button></td>
+      <td>${row.source === "rush"
+        ? `<span class="muted">Zmień % w zamówieniu</span>`
+        : `<button class="small danger" data-delete-quote="${row.id}" type="button">Usuń</button>`}</td>
     </tr>
   `).join("");
   elements.quoteLinesBody.querySelectorAll("[data-delete-quote]").forEach((button) => {
@@ -1768,18 +3138,28 @@ function renderQuoteLines() {
       await fetchJson(`/api/quote-lines/${button.dataset.deleteQuote}`, { method: "DELETE" });
       await refreshCrm();
       await loadQuoteLines(orderId);
-      showToast("Pozycja wyceny usuniĂ„â„˘ta");
+      showToast("Pozycja wyceny usunięta");
     });
   });
 }
 
-
+function renderCutOrderSelect() {
+  const select = cutOrderField();
+  const currentValue = select.value || (state.selectedOrderId ? String(state.selectedOrderId) : "");
+  select.innerHTML = `<option value="">Wybierz zamówienie / klienta</option>` + state.orders.map((order) => `
+    <option value="${order.id}">${escapeHtml(order.order_number)} - ${escapeHtml(order.customer_name)} - ${escapeHtml(order.title)}</option>
+  `).join("");
+  select.value = currentValue;
+}
 
 function renderCutMaterialSelect() {
   const select = elements.cutJobForm.elements.material_id;
   const currentValue = select.value;
-  const materials = getFilteredCutMaterials();
-  select.innerHTML = `<option value="">Materiał z listy GibLab</option>` + materials.map((material) => `
+  const materials = getFilteredCutJobMaterials();
+  const emptyLabel = materials.length
+    ? "Materiał z listy GibLab"
+    : "Brak materiału - zaimportuj katalog Excel";
+  select.innerHTML = `<option value="">${emptyLabel}</option>` + materials.map((material) => `
     <option value="${material.id}">${escapeHtml(materialSelectLabel(material))}</option>
   `).join("");
   if (materials.some((material) => String(material.id) === currentValue)) select.value = currentValue;
@@ -1796,14 +3176,30 @@ function renderCutPartMaterialSelect() {
   if (materials.some((material) => String(material.id) === currentValue)) select.value = currentValue;
 }
 
+function cutOrderField() {
+  return elements.cutJobForm.elements.namedItem("order_id")
+    || document.querySelector('#cuttingTab select[name="order_id"]');
+}
+
+function getFilteredCutJobMaterials() {
+  const query = normalizeText(elements.cutJobMaterialSearch?.value || "");
+  const producer = elements.cutJobProducerFilter?.value || "";
+  const thickness = elements.cutJobThicknessFilter?.value || "";
+  return filterCutMaterials(query, producer, thickness);
+}
+
 function getFilteredCutMaterials() {
-  const query = normalizeText(elements.cutMaterialSearch.value);
-  const producer = elements.cutProducerFilter.value;
-  const thickness = elements.cutThicknessFilter.value;
+  const query = normalizeText(elements.cutMaterialSearch?.value || "");
+  const producer = elements.cutProducerFilter?.value || "";
+  const thickness = elements.cutThicknessFilter?.value || "";
+  return filterCutMaterials(query, producer, thickness);
+}
+
+function filterCutMaterials(query, producer, thickness) {
   return state.flat.filter((row) => {
-    if (row.isfolder) return false;
+    if (row.isfolder || !isVisibleCatalogRow(row)) return false;
     const rowProducer = getMaterialProducer(row);
-    const rowThickness = row.thickness === null || row.thickness === undefined ? "" : String(row.thickness);
+    const rowThickness = materialThicknessValue(row);
     const searchText = normalizeText(`${row.code} ${row.name} ${rowProducer} ${rowThickness}`);
     return (!query || searchText.includes(query))
       && (!producer || rowProducer === producer)
@@ -1819,35 +3215,63 @@ function renderCutMaterialLists() {
 function getFilteredEdgeMaterials() {
   const query = normalizeText(elements.cutEdgeMaterialSearch.value);
   return state.flat.filter((row) => {
-    if (row.isfolder) return false;
+    if (row.isfolder || !isVisibleCatalogRow(row)) return false;
     const searchText = normalizeText(`${row.code} ${row.name}`);
     return !query || searchText.includes(query);
   });
 }
 
+function getFilteredJobEdgeMaterials() {
+  const query = normalizeText(elements.cutJobEdgeMaterialSearch?.value || "");
+  return state.flat.filter((row) => {
+    if (row.isfolder || !isVisibleCatalogRow(row)) return false;
+    const searchText = normalizeText(`${row.code} ${row.name}`);
+    return !query || searchText.includes(query);
+  });
+}
+
+function isLegacyUkrainianMaterial(material) {
+  const label = `${material?.code || ""} ${material?.name || ""}`;
+  return /[А-Яа-яІіЇїЄє]/.test(label);
+}
+
+function isVisibleCatalogRow(material) {
+  return Number(material?.is_active ?? 1) !== 0 && !isLegacyUkrainianMaterial(material);
+}
+
 function renderEdgeMaterialLists() {
-  const materials = getFilteredEdgeMaterials();
   const renderSelect = (select) => {
     if(!select) return;
     const current = select.value;
+    const materials = select === elements.cutJobForm.elements.edge_material_id ? getFilteredJobEdgeMaterials() : getFilteredEdgeMaterials();
     select.innerHTML = `<option value="">Wybierz okleinę z bazy</option>` + materials.map((m) => `<option value="${m.id}">${escapeHtml(m.code + ' - ' + m.name)}</option>`).join("");
-    if(materials.some((m) => String(m.id) === current)) select.value = current;
+    if (materials.some((m) => String(m.id) === current)) select.value = current;
   };
   renderSelect(elements.cutJobForm.elements.edge_material_id);
   renderSelect(elements.cutPartForm.elements.edge_material_id);
 }
 
 function renderCutMaterialFilters() {
-  const currentProducer = elements.cutProducerFilter.value;
-  const currentThickness = elements.cutThicknessFilter.value;
-  const materials = state.flat.filter((row) => !row.isfolder);
+  const materials = state.flat.filter((row) =>
+    !row.isfolder && isVisibleCatalogRow(row)
+  );
   const producers = [...new Set(materials.map(getMaterialProducer).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pl"));
-  const thicknesses = [...new Set(materials.map((row) => row.thickness === null || row.thickness === undefined ? "" : String(row.thickness)).filter(Boolean))]
+  const thicknesses = [...new Set(materials.map(materialThicknessValue).filter(Boolean))]
     .sort((a, b) => Number(a) - Number(b));
-  elements.cutProducerFilter.innerHTML = `<option value="">Producent</option>` + producers.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
-  elements.cutThicknessFilter.innerHTML = `<option value="">Grubość</option>` + thicknesses.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(formatNumber(value))} mm</option>`).join("");
-  elements.cutProducerFilter.value = producers.includes(currentProducer) ? currentProducer : "";
-  elements.cutThicknessFilter.value = thicknesses.includes(currentThickness) ? currentThickness : "";
+  fillCutMaterialFilter(elements.cutProducerFilter, producers, "Producent");
+  fillCutMaterialFilter(elements.cutJobProducerFilter, producers, "Producent");
+  fillCutMaterialFilter(elements.cutThicknessFilter, thicknesses, "Grubość", true);
+  fillCutMaterialFilter(elements.cutJobThicknessFilter, thicknesses, "Grubość", true);
+}
+
+function fillCutMaterialFilter(select, values, label, isThickness = false) {
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = `<option value="">${label}</option>` + values.map((value) => {
+    const text = isThickness ? `${formatNumber(value)} mm` : value;
+    return `<option value="${escapeHtml(value)}">${escapeHtml(text)}</option>`;
+  }).join("");
+  select.value = values.includes(current) ? current : "";
 }
 
 function getMaterialProducer(material) {
@@ -1864,10 +3288,34 @@ function getMaterialProducer(material) {
   return folders[1]?.name || folders[0]?.name || "";
 }
 
+function materialThicknessValue(material) {
+  const existing = material?.thickness;
+  if (existing !== null && existing !== undefined && existing !== "") return String(existing);
+  const parsed = parseMaterialThicknessFromCode(material?.code);
+  return parsed ? String(parsed) : "";
+}
+
+function parseMaterialThicknessFromCode(code) {
+  const value = String(code || "").trim();
+  const directSuffix = value.match(/\.(\d{1,2})$/);
+  if (directSuffix && isPlausibleMaterialThickness(directSuffix[1])) return Number(directSuffix[1]);
+  const beforeVariant = value.match(/\.(\d{1,2})\.\d{1,2}$/);
+  if (beforeVariant && isPlausibleMaterialThickness(beforeVariant[1])) return Number(beforeVariant[1]);
+  const kronospan = value.match(/-(\d{1,2})-\d{3,5}x\d{3,5}$/i);
+  if (kronospan && isPlausibleMaterialThickness(kronospan[1])) return Number(kronospan[1]);
+  return null;
+}
+
+function isPlausibleMaterialThickness(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 3 && number <= 60;
+}
+
 function materialSelectLabel(material) {
+  const thickness = materialThicknessValue(material);
   return [
     getMaterialProducer(material),
-    material.thickness ? `${formatNumber(material.thickness)} mm` : "",
+    thickness ? `${formatNumber(thickness)} mm` : "",
     material.length && material.width ? `${formatNumber(material.length)}x${formatNumber(material.width)}` : "",
     material.code,
     material.name
@@ -1877,9 +3325,10 @@ function materialSelectLabel(material) {
 function cutJobMaterialLabel(job) {
   const material = state.flat.find((row) => String(row.id) === String(job.material_id));
   if (material) {
+    const thickness = materialThicknessValue(material);
     return [
       material.code,
-      material.thickness ? `${formatNumber(material.thickness)} mm` : "",
+      thickness ? `${formatNumber(thickness)} mm` : "",
       material.length && material.width ? `${formatNumber(material.length)}x${formatNumber(material.width)}` : "",
       compactMaterialName(material.name)
     ].filter(Boolean).join(" | ");
@@ -1889,17 +3338,17 @@ function cutJobMaterialLabel(job) {
 
 function compactMaterialName(name) {
   return String(name || "")
-    .replace(/\bPÄąâ€šyta\s+laminowana\b/gi, "PÄąâ€šyta")
-    .replace(/\bPÄąâ€šyta\s+wiÄ‚Ĺ‚rowa\b/gi, "PÄąâ€šyta")
+    .replace(/\bPłyta\s+laminowana\b/gi, "Płyta")
+    .replace(/\bPłyta\s+wiórowa\b/gi, "Płyta")
     .replace(/\s+/g, " ")
     .trim();
 }
 
 function normalizeText(value) {
   return String(value || "")
-    .replaceAll("Äąâ€š", "l")
-    .replaceAll("Äąďż˝", "L")
-    .replaceAll("Äąďż˝", "L")
+    .replaceAll("ł", "l")
+    .replaceAll("Ł", "L")
+    .replaceAll("Ł", "L")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
@@ -1925,7 +3374,7 @@ function applyCutPartMaterial(id) {
   field("material_id").value = String(material.id);
   field("material_code").value = material.code || "";
   field("material_name").value = material.name || "";
-  field("thickness").value = material.thickness ?? "";
+  field("thickness").value = materialThicknessValue(material);
   if (material.length) field("length").value = material.length;
   if (material.width) field("width").value = material.width;
   if (elements.cutJobForm.elements.material_id) {
@@ -1941,9 +3390,9 @@ function applyCutPartMaterial(id) {
 function applyCutJobMaterial(material) {
   if (!material || material.isfolder) return;
   elements.cutJobForm.elements.material_name.value = material.name || "";
-  elements.cutMaterialSearch.value = "";
-  elements.cutProducerFilter.value = getMaterialProducer(material);
-  elements.cutThicknessFilter.value = material.thickness === null || material.thickness === undefined ? "" : String(material.thickness);
+  if (elements.cutJobMaterialSearch) elements.cutJobMaterialSearch.value = "";
+  if (elements.cutJobProducerFilter) elements.cutJobProducerFilter.value = getMaterialProducer(material);
+  if (elements.cutJobThicknessFilter) elements.cutJobThicknessFilter.value = materialThicknessValue(material);
   renderCutMaterialLists();
   renderMaterialChips(material);
   applyCutPartMaterial(material.id);
@@ -1953,11 +3402,13 @@ function applyCutJobMaterial(material) {
 }
 
 function renderCutJobs() {
-  const selectedOrderId = Number(elements.globalCutOrderSelect?.value || state.selectedOrderId || 0);
+  const selectedOrderId = Number(cutOrderField().value || state.selectedOrderId || 0);
   const rows = selectedOrderId ? state.cutJobs.filter((row) => Number(row.order_id) === selectedOrderId) : state.cutJobs;
   elements.cutJobsBody.innerHTML = rows.map((row) => `
     <tr class="material-row ${row.id === state.selectedCutJobId ? "selected-row" : ""}" data-id="${row.id}">
       <td>${row.id}</td>
+      <td>${escapeHtml(row.order_number || "")}</td>
+      <td>${escapeHtml(row.customer_name || "")}</td>
       <td>${escapeHtml(row.name)}</td>
       <td>${escapeHtml(cutJobMaterialLabel(row))}</td>
       <td>${escapeHtml(row.status)}</td>
@@ -1978,9 +3429,10 @@ function renderMaterialChips(material) {
     elements.cutMaterialChips.innerHTML = "";
     return;
   }
+  const thickness = materialThicknessValue(material);
   const chips = [
     getMaterialProducer(material),
-    material.thickness ? `${formatNumber(material.thickness)} mm` : "",
+    thickness ? `${formatNumber(thickness)} mm` : "",
     material.length && material.width ? `${formatNumber(material.length)}x${formatNumber(material.width)}` : "",
     material.code || "",
     material.name || ""
@@ -1989,39 +3441,638 @@ function renderMaterialChips(material) {
 }
 
 function renderCutParts() {
+  const priceRows = state.cutParts.map((row) => cutPartPricePreview(row));
   elements.cutPartsBody.innerHTML = state.cutParts.map((row, index) => `
-    <tr>
+    <tr class="material-row ${state.selectedCutPartIds.has(Number(row.id)) ? "cut-part-selected" : ""} ${Number(row.id) === Number(state.highlightedCutPartId) ? "cut-part-highlight" : ""} ${Number(row.id) === Number(state.selectedCutPartId) ? "selected-row" : ""}" data-cut-part-id="${row.id}">
+      <td><input class="cut-row-select" data-select-cut-part="${row.id}" type="checkbox" ${state.selectedCutPartIds.has(Number(row.id)) ? "checked" : ""}></td>
       <td>${index + 1}</td>
-      <td><input class="cut-table-input cut-table-number" data-cut-id="${row.id}" data-cut-field="length" value="${escapeHtml(formatDecimalInput(row.length))}"></td>
-      <td><input class="cut-table-input cut-table-number" data-cut-id="${row.id}" data-cut-field="width" value="${escapeHtml(formatDecimalInput(row.width))}"></td>
-      <td><input class="cut-table-input cut-table-number" data-cut-id="${row.id}" data-cut-field="quantity" value="${escapeHtml(formatDecimalInput(row.quantity))}"></td>
-      <td><input class="cut-table-check" data-cut-id="${row.id}" data-cut-field="texture" type="checkbox" ${row.texture ? "checked" : ""}></td>
-      <td><input class="cut-table-check" data-cut-id="${row.id}" data-cut-field="edge_top" type="checkbox" ${row.edge_top ? "checked" : ""}></td>
-      <td><input class="cut-table-check" data-cut-id="${row.id}" data-cut-field="edge_bottom" type="checkbox" ${row.edge_bottom ? "checked" : ""}></td>
-      <td><input class="cut-table-check" data-cut-id="${row.id}" data-cut-field="edge_left" type="checkbox" ${row.edge_left ? "checked" : ""}></td>
-      <td><input class="cut-table-check" data-cut-id="${row.id}" data-cut-field="edge_right" type="checkbox" ${row.edge_right ? "checked" : ""}></td>
-      <td><input class="cut-table-input cut-table-name" data-cut-id="${row.id}" data-cut-field="name" value="${escapeHtml(row.name)}"></td>
-      <td><button class="small danger" data-delete-cut-part="${row.id}" type="button">UsuÄąâ€ž</button></td>
+      <td>${formatNumber(row.length)}</td>
+      <td>${formatNumber(row.width)}</td>
+      <td>${formatNumber(row.quantity)}</td>
+      <td>${formatNumber(cutPartArea(row))}</td>
+      <td>${cutPartOperationBadges(row)}</td>
+      <td>${escapeHtml(row.element_type || "")}</td>
+      <td>${escapeHtml(row.technology || "")}</td>
+      <td>${escapeHtml(row.lacquer_sides || "")}</td>
+      <td>${escapeHtml([row.name, row.tech_notes].filter(Boolean).join(" | "))}</td>
+      <td class="cut-price-cell">${cutPartPriceLabels(priceRows[index])}</td>
+      <td class="cut-price-cell">${cutPartPriceValue(priceRows[index])}</td>
+      <td class="cut-row-actions">
+        <button class="small" data-edit-cut-part="${row.id}" type="button">Edytuj</button>
+        <button class="small danger" data-delete-cut-part="${row.id}" type="button">Usuń</button>
+      </td>
     </tr>
-  `).join("") + renderCutPartDraftRow();
+  `).join("");
+  renderCutPartsFoot(priceRows);
+  elements.cutPartsBody.querySelectorAll("[data-edit-cut-part]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      selectCutPart(Number(button.dataset.editCutPart));
+    });
+  });
   elements.cutPartsBody.querySelectorAll("[data-delete-cut-part]").forEach((button) => {
-    button.addEventListener("click", async () => {
+    button.addEventListener("click", async (event) => {
+      event.stopPropagation();
       await fetchJson(`/api/cut-parts/${button.dataset.deleteCutPart}`, { method: "DELETE" });
+      if (Number(state.selectedCutPartId) === Number(button.dataset.deleteCutPart)) {
+        state.selectedCutPartId = null;
+        closeCutPartEditor();
+      }
+      state.selectedCutPartIds.delete(Number(button.dataset.deleteCutPart));
       await loadCutParts(state.selectedCutJobId);
       await refreshCutting();
-      showToast("Formatka usuniĂ„â„˘ta");
+      showToast("Formatka usunięta");
     });
   });
-  elements.cutPartsBody.querySelectorAll("[data-cut-field]").forEach((field) => {
-    field.addEventListener("keydown", handleCutTableKeydown);
-    field.addEventListener(field.type === "checkbox" ? "change" : "blur", handleCutTableFieldSave);
-  });
-  elements.cutPartsBody.querySelectorAll("[data-save-new-cut-part]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const saved = await saveDraftCutPart(button.closest("tr"));
-      if (saved) focusCutDraftStart();
+  elements.cutPartsBody.querySelectorAll("[data-select-cut-part]").forEach((checkbox) => {
+    checkbox.addEventListener("click", (event) => event.stopPropagation());
+    checkbox.addEventListener("change", () => {
+      const id = Number(checkbox.dataset.selectCutPart);
+      if (checkbox.checked) state.selectedCutPartIds.add(id);
+      else state.selectedCutPartIds.delete(id);
+      updateCutPartSelectionTools();
     });
   });
+  elements.cutPartsBody.querySelectorAll("[data-cut-part-id]").forEach((rowElement) => {
+    rowElement.addEventListener("click", (event) => {
+      if (event.target.closest("button, input, select, textarea, label")) return;
+      selectCutPart(Number(rowElement.dataset.cutPartId));
+    });
+  });
+  revealHighlightedCutPart();
+  if (state.selectedCutPartId && !state.cutParts.some((part) => Number(part.id) === Number(state.selectedCutPartId))) {
+    state.selectedCutPartId = null;
+    closeCutPartEditor();
+  }
+  state.selectedCutPartIds.forEach((id) => {
+    if (!state.cutParts.some((part) => Number(part.id) === Number(id))) state.selectedCutPartIds.delete(id);
+  });
+  updateCutPartSelectionTools();
+}
+
+function renderCutPartsFoot(priceRows) {
+  if (!elements.cutPartsFoot) return;
+  const totals = priceRows.reduce((result, row) => {
+    result.area += row.area;
+    result.quantity += row.quantity;
+    result.total += row.total;
+    return result;
+  }, { area: 0, quantity: 0, total: 0 });
+  const technologyGroups = new Map();
+  state.cutParts.forEach((part, index) => {
+    const elementType = String(part.element_type || "Bez określonego typu").trim();
+    const technology = String(part.technology || "Bez technologii").trim();
+    const lacquerSides = String(part.lacquer_sides || "").trim();
+    const key = [elementType, technology, lacquerSides].join("|");
+    const priceRow = priceRows[index] || cutPartPricePreview(part);
+    const group = technologyGroups.get(key) || {
+      elementType,
+      technology,
+      lacquerSides,
+      quantity: 0,
+      area: 0,
+      total: 0
+    };
+    group.quantity += priceRow.quantity;
+    group.area += priceRow.area;
+    group.total += priceRow.total;
+    technologyGroups.set(key, group);
+  });
+  const groupRows = [...technologyGroups.values()].map((group) => `
+    <tr class="cut-technology-summary-row">
+      <td colspan="4">${escapeHtml(group.elementType)}</td>
+      <td>${formatNumber(group.quantity)} szt.</td>
+      <td>${formatNumber(group.area)} m²</td>
+      <td colspan="5">${escapeHtml([group.technology, group.lacquerSides].filter(Boolean).join(" / "))}</td>
+      <td>-</td>
+      <td>${group.total > 0 ? `${formatMoney(group.total)} zł` : "-"}</td>
+      <td></td>
+    </tr>
+  `).join("");
+  elements.cutPartsFoot.innerHTML = `
+    ${technologyGroups.size ? `
+      <tr class="cut-technology-summary-title">
+        <td colspan="14">Podsumowanie według typu elementu i technologii</td>
+      </tr>
+      ${groupRows}
+    ` : ""}
+    <tr class="cut-parts-summary-row">
+      <td colspan="4">Razem wszystkie formatki</td>
+      <td>${formatNumber(totals.quantity)} szt.</td>
+      <td>${formatNumber(totals.area)} m²</td>
+      <td colspan="6"></td>
+      <td>${totals.total > 0 ? `${formatMoney(totals.total)} zł` : "-"}</td>
+      <td></td>
+    </tr>
+  `;
+}
+
+function cutPartPricePreview(part) {
+  const template = cutPartTechnologyTemplate(part);
+  const priceConfig = cutTechnologyPriceForPart(part, template);
+  const unit = priceConfig?.unit || template?.pricing_unit || "none";
+  const price = Number(priceConfig?.unit_price || 0);
+  const quantity = Number(part.quantity || 0);
+  const area = cutPartArea(part);
+  const runningMeters = Number(part.length || 0) * quantity / 1000;
+  let amount = 0;
+  if (unit === "m2" && area > 0 && price > 0) amount = area * price;
+  if (unit === "mb" && runningMeters > 0 && price > 0) amount = runningMeters * price;
+  if (unit === "szt" && quantity > 0 && price > 0) amount = quantity * price;
+  return {
+    area,
+    quantity,
+    unit,
+    price,
+    total: amount
+  };
+}
+
+function cutTechnologyPriceForPart(part, template = cutPartTechnologyTemplate(part)) {
+  if (template) {
+    const byTemplateKey = state.cutTechnologyPrices.find((row) => row.template_key && row.template_key === template.key);
+    if (byTemplateKey) return byTemplateKey;
+  }
+  const normalizedTechnology = normalizeText(part.technology);
+  const normalizedElementType = normalizeText(part.element_type);
+  const normalizedSides = normalizeText(part.lacquer_sides);
+  return state.cutTechnologyPrices.find((row) =>
+    normalizeText(row.technology) === normalizedTechnology
+    && (!row.element_type || normalizeText(row.element_type) === normalizedElementType)
+    && (!row.lacquer_sides || normalizeText(row.lacquer_sides) === normalizedSides)
+  ) || state.cutTechnologyPrices.find((row) =>
+    normalizeText(row.element_type) === normalizedElementType
+    && (!row.lacquer_sides || normalizeText(row.lacquer_sides) === normalizedSides)
+  ) || null;
+}
+
+function cutPartPriceLabels(priceRow) {
+  if (!priceRow.price || priceRow.unit === "none") return `<span class="muted">-</span>`;
+  return `<span class="cut-price-badge">${formatMoney(priceRow.price)} zł/${escapeHtml(technologyUnitLabel(priceRow.unit))}</span>`;
+}
+
+function cutPartPriceValue(priceRow) {
+  return priceRow.total > 0 ? `${formatMoney(priceRow.total)} zł` : "-";
+}
+
+function cutPartTechnologyTemplate(part) {
+  return findCutTechnologyTemplate(part.technology)
+    || findCutTechnologyTemplate(part.tech_notes)
+    || CUT_TECHNOLOGY_TEMPLATES.find((template) => template.element_type === part.element_type && template.lacquer_sides === part.lacquer_sides)
+    || CUT_TECHNOLOGY_TEMPLATES.find((template) => template.element_type === part.element_type)
+    || null;
+}
+
+function technologyUnitLabel(unit) {
+  if (unit === "m2") return "m²";
+  if (unit === "mb") return "mb";
+  if (unit === "szt") return "szt.";
+  return "";
+}
+
+function cutQuotePreviewPrices() {
+  const form = elements.cutQuoteForm;
+  const prices = {
+    material: parseDecimal(form?.elements.material_price?.value),
+    cut: parseDecimal(form?.elements.cut_price?.value),
+    edge: parseDecimal(form?.elements.edge_price?.value),
+    milling: parseDecimal(form?.elements.milling_price?.value),
+    drilling: parseDecimal(form?.elements.drilling_price?.value),
+    lacquer: parseDecimal(form?.elements.lacquer_price?.value),
+    other: parseDecimal(form?.elements.other_price?.value)
+  };
+  const selectedItem = state.priceItems.find((row) => String(row.id) === String(form?.elements.service_price_item_id?.value));
+  const target = form?.elements.service_price_target?.value;
+  const targetMap = {
+    material_price: "material",
+    cut_price: "cut",
+    edge_price: "edge",
+    milling_price: "milling",
+    drilling_price: "drilling",
+    lacquer_price: "lacquer",
+    other_price: "other"
+  };
+  if (selectedItem && targetMap[target] && !prices[targetMap[target]]) {
+    prices[targetMap[target]] = Number(selectedItem.unit_price || 0);
+  }
+  return prices;
+}
+
+function cutPartEdgeMeters(part) {
+  const length = Number(part.length || 0);
+  const width = Number(part.width || 0);
+  const quantity = Number(part.quantity || 0);
+  let edgeLength = 0;
+  if (part.edge_top) edgeLength += length;
+  if (part.edge_bottom) edgeLength += length;
+  if (part.edge_left) edgeLength += width;
+  if (part.edge_right) edgeLength += width;
+  return edgeLength * quantity / 1000;
+}
+
+function revealHighlightedCutPart() {
+  if (!state.highlightedCutPartId) return;
+  const row = elements.cutPartsBody.querySelector(`[data-cut-part-id="${state.highlightedCutPartId}"]`);
+  row?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  setTimeout(() => {
+    if (Number(state.highlightedCutPartId) === Number(row?.dataset.cutPartId)) {
+      state.highlightedCutPartId = null;
+    }
+  }, 1800);
+}
+
+function cutPartArea(part) {
+  return Number(part.length || 0) * Number(part.width || 0) * Number(part.quantity || 0) / 1000000;
+}
+
+function cutPartOperationBadges(part) {
+  const operations = [];
+  if (part.texture) operations.push("TKT");
+  if (part.edge_top) operations.push("OB");
+  if (part.edge_bottom) operations.push("OH");
+  if (part.edge_left) operations.push("OL");
+  if (part.edge_right) operations.push("OP");
+  if (part.work_milling) operations.push("FREZ");
+  if (part.work_drilling) operations.push("OTW");
+  if (part.work_lacquer) operations.push("LAK");
+  if (part.work_other) operations.push("INNE");
+  return operations.length
+    ? operations.map((name) => `<span class="cut-op-badge">${escapeHtml(name)}</span>`).join("")
+    : `<span class="muted">-</span>`;
+}
+
+function selectCutPart(id) {
+  const part = state.cutParts.find((row) => Number(row.id) === Number(id));
+  if (!part) return;
+  state.selectedCutPartId = id;
+  openCutPartEditor(part);
+  renderCutParts();
+}
+
+function openCutPartEditor(part) {
+  fillCutPartEditor(part);
+  elements.cutPartEditorPanel?.classList.add("open");
+  elements.cutPartEditorPanel?.setAttribute("aria-hidden", "false");
+}
+
+function closeCutPartEditor() {
+  elements.cutPartEditorPanel?.classList.remove("open");
+  elements.cutPartEditorPanel?.setAttribute("aria-hidden", "true");
+}
+
+function selectedCutParts() {
+  return state.cutParts.filter((part) => state.selectedCutPartIds.has(Number(part.id)));
+}
+
+function updateCutPartSelectionTools() {
+  const count = selectedCutParts().length;
+  if (elements.selectAllCutParts) {
+    const total = state.cutParts.length;
+    elements.selectAllCutParts.checked = total > 0 && count === total;
+    elements.selectAllCutParts.indeterminate = count > 0 && count < total;
+  }
+  if (elements.selectedCutPartsCount) {
+    elements.selectedCutPartsCount.textContent = `Zaznaczone: ${count}`;
+  }
+  if (elements.applyCutPartsTemplateBtn) {
+    elements.applyCutPartsTemplateBtn.disabled = count === 0;
+    elements.applyCutPartsTemplateBtn.title = count === 0 ? "Zaznacz formatki w tabeli" : "";
+    elements.applyCutPartsTemplateBtn.textContent = count
+      ? `Zastosuj do zaznaczonych (${count})`
+      : "Zastosuj do zaznaczonych";
+  }
+}
+
+function updateDeliveryQuantityFromSheets() {
+  const form = elements.deliveryLineForm;
+  if (!form) return;
+  const material = state.flat.find((row) => String(row.id) === String(form.elements.material_id.value));
+  const sheets = parseImportedNumber(form.elements.sheet_count?.value);
+  const hasSheetDimensions = Number(material?.length) > 0 && Number(material?.width) > 0;
+  if (sheets > 0 && hasSheetDimensions) {
+    const area = sheets * Number(material.length) * Number(material.width) / 1000000;
+    form.elements.quantity.value = String(Number(area.toFixed(4))).replace(".", ",");
+    elements.deliveryQuantityHint.textContent =
+      `${formatNumber(sheets)} ark. × ${formatNumber(material.length)} × ${formatNumber(material.width)} mm = ${formatNumber(area)} m²`;
+    return;
+  }
+  elements.deliveryQuantityHint.textContent = hasSheetDimensions
+    ? `Format materiału: ${formatNumber(material.length)} × ${formatNumber(material.width)} mm`
+    : "Dla materiału bez formatu wpisz ilość bezpośrednio.";
+}
+
+function toggleAllCutPartsSelection(event) {
+  state.selectedCutPartIds.clear();
+  if (event.target.checked) {
+    state.cutParts.forEach((part) => state.selectedCutPartIds.add(Number(part.id)));
+  }
+  renderCutParts();
+}
+
+function selectAllCutPartsInCurrentJob() {
+  state.selectedCutPartIds.clear();
+  state.cutParts.forEach((part) => state.selectedCutPartIds.add(Number(part.id)));
+  renderCutParts();
+}
+
+function clearCutPartsSelection() {
+  state.selectedCutPartIds.clear();
+  renderCutParts();
+}
+
+function cutPartOperationNames(part) {
+  const operations = [];
+  if (part.texture) operations.push("TKT");
+  if (part.edge_top) operations.push("OB");
+  if (part.edge_bottom) operations.push("OH");
+  if (part.edge_left) operations.push("OL");
+  if (part.edge_right) operations.push("OP");
+  if (part.work_milling) operations.push("FREZ");
+  if (part.work_drilling) operations.push("OTWÓR");
+  if (part.work_lacquer) operations.push("LAKIER");
+  if (part.work_other) operations.push("INNE");
+  return operations;
+}
+
+function cutLabelMainTechnology(part, operations) {
+  const explicitNotes = String(part.tech_notes || "").trim();
+  if (explicitNotes) return explicitNotes;
+  const fallback = [
+    part.element_type,
+    part.technology,
+    ...operations.filter((name) => ["FREZ", "OTWÓR", "LAKIER", "INNE"].includes(name)),
+    part.lacquer_sides
+  ].filter(Boolean).join(" / ");
+  return fallback || "BRAK TECHNOLOGII";
+}
+
+function cutLabelMaterial(part, job) {
+  return [
+    part.material_code,
+    part.thickness ? `${formatNumber(part.thickness)} mm` : "",
+    compactMaterialName(part.material_name)
+  ].filter(Boolean).join(" | ") || cutJobMaterialLabel(job) || "-";
+}
+
+function cutLabelRows(rows) {
+  return rows
+    .filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== "")
+    .map(([label, value]) => `
+      <div class="label-row">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value)}</strong>
+      </div>
+    `).join("");
+}
+
+function cutLabelHtml(part, job, index) {
+  const operations = cutPartOperationNames(part);
+  const technology = cutLabelMainTechnology(part, operations);
+  const notes = [part.name, part.description].filter(Boolean).join(" | ");
+  return `
+    <article class="cut-label">
+      <div class="label-top">
+        <div>
+          <div class="label-small">ETYKIETA FORMATKI</div>
+          <div class="label-title">${escapeHtml(technology)}</div>
+        </div>
+        <div class="label-number">#${index + 1}</div>
+      </div>
+      <div class="label-dim">${escapeHtml(formatNumber(part.length))} x ${escapeHtml(formatNumber(part.width))} mm</div>
+      <div class="label-qty">Ilość: ${escapeHtml(formatNumber(part.quantity))} szt.</div>
+      <div class="label-grid">
+        ${cutLabelRows([
+          ["Zamówienie", job.order_number || job.number || ""],
+          ["Klient", job.customer_name || job.client_name || ""],
+          ["Pozycja", job.name || ""],
+          ["Materiał", cutLabelMaterial(part, job)],
+          ["Operacje", operations.join(", ") || "-"],
+          ["Strony lakierowania", part.lacquer_sides || "-"],
+          ["Uwagi / nazwa", notes || "-"]
+        ])}
+      </div>
+    </article>
+  `;
+}
+
+function buildCutLabelsPrintHtml(parts, job) {
+  const labels = parts.map((part, index) => cutLabelHtml(part, job, index)).join("");
+  return `<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <title>Etykiety formatek</title>
+  <style>
+    @page { size: A4; margin: 10mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #111; background: #fff; font-family: Arial, sans-serif; }
+    .print-actions { padding: 8px 10mm; border-bottom: 1px solid #ddd; }
+    .print-actions button { padding: 8px 14px; font-weight: 700; }
+    .labels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8mm; padding: 10mm; }
+    .cut-label { min-height: 78mm; border: 1px solid #111; padding: 6mm; break-inside: avoid; page-break-inside: avoid; }
+    .label-top { display: flex; justify-content: space-between; gap: 5mm; border-bottom: 1px solid #111; padding-bottom: 3mm; }
+    .label-small { font-size: 8pt; letter-spacing: 0; text-transform: uppercase; }
+    .label-title { margin-top: 2mm; font-size: 15pt; font-weight: 800; line-height: 1.15; text-transform: uppercase; }
+    .label-number { font-size: 18pt; font-weight: 800; }
+    .label-dim { margin-top: 5mm; font-size: 19pt; font-weight: 800; }
+    .label-qty { margin: 2mm 0 4mm; font-size: 13pt; font-weight: 700; }
+    .label-grid { display: grid; gap: 1.5mm; font-size: 10pt; }
+    .label-row { display: grid; grid-template-columns: 28mm 1fr; gap: 3mm; border-top: 1px solid #ddd; padding-top: 1.5mm; }
+    .label-row span { color: #555; }
+    .label-row strong { font-weight: 700; overflow-wrap: anywhere; }
+    @media print {
+      .print-actions { display: none; }
+      .labels { padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="print-actions">
+    <button type="button" onclick="window.print()">Drukuj etykiety</button>
+  </div>
+  <main class="labels">${labels}</main>
+  <script>setTimeout(() => window.print(), 300);</script>
+</body>
+</html>`;
+}
+
+function printSelectedCutLabels() {
+  const selected = selectedCutParts();
+  if (!selected.length) return showToast("Zaznacz formatki do wydruku etykiet.");
+  const job = state.cutJobs.find((item) => Number(item.id) === Number(state.selectedCutJobId)) || {};
+  const printWindow = window.open("", "_blank", "width=1000,height=800");
+  if (!printWindow) return showToast("Nie udało się otworzyć okna druku. Sprawdź blokadę wyskakujących okien.");
+  printWindow.document.open();
+  printWindow.document.write(buildCutLabelsPrintHtml(selected, job));
+  printWindow.document.close();
+  printWindow.focus();
+}
+
+function printSelectedOffcutLabel() {
+  const offcut = state.offcuts.find((row) => String(row.id) === String(state.selectedOffcutId));
+  if (!offcut) return showToast("Najpierw zaznacz resztkę");
+  const printWindow = window.open("", "_blank", "width=700,height=650");
+  if (!printWindow) return showToast("Nie udało się otworzyć okna druku. Sprawdź blokadę wyskakujących okien.");
+  const material = offcut.material_name
+    || [offcut.code, offcut.material_thickness ? `${formatNumber(offcut.material_thickness)} mm` : ""].filter(Boolean).join(" | ")
+    || "Nie przypisano";
+  const status = offcut.status === "reserved"
+    ? `ZAREZERWOWANA: ${offcut.reserved_by || "-"}`
+    : offcut.status === "used" ? "ZUŻYTA" : "DOSTĘPNA";
+  const labelRows = cutLabelRows([
+    ["Materiał", material],
+    ["Kod materiału", offcut.code || "-"],
+    ["Projekt", offcut.project_name || "-"],
+    ["Status", status],
+    ["Rezerwacja", offcut.reserved_project || "-"],
+    ["Uwagi", offcut.storage_note || "-"]
+  ]);
+  printWindow.document.open();
+  printWindow.document.write(`<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <title>Etykieta resztki ${escapeHtml(offcut.id)}</title>
+  <style>
+    @page { size: 100mm 60mm; margin: 3mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #111; background: #fff; font-family: Arial, sans-serif; }
+    .print-actions { padding: 8px; border-bottom: 1px solid #ddd; }
+    .print-actions button { padding: 8px 14px; font-weight: 700; }
+    .offcut-label { width: 94mm; min-height: 54mm; border: 1px solid #111; padding: 3mm; }
+    .label-top { display: grid; grid-template-columns: 1fr auto; gap: 3mm; border-bottom: 1px solid #111; padding-bottom: 2mm; }
+    .label-small { font-size: 7pt; font-weight: 700; }
+    .label-id { font-size: 15pt; font-weight: 900; overflow-wrap: anywhere; }
+    .label-location { font-size: 20pt; font-weight: 900; text-align: right; }
+    .label-dim { margin: 2mm 0; font-size: 18pt; font-weight: 900; }
+    .label-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1mm 3mm; font-size: 7pt; }
+    .label-row { display: grid; grid-template-columns: 20mm 1fr; gap: 1mm; border-top: 1px solid #ddd; padding-top: 1mm; }
+    .label-row span { color: #555; }
+    .label-row strong { overflow-wrap: anywhere; }
+    @media print {
+      .print-actions { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="print-actions"><button type="button" onclick="window.print()">Drukuj etykietę</button></div>
+  <article class="offcut-label">
+    <div class="label-top">
+      <div>
+        <div class="label-small">RESZTKA PŁYTY / ID</div>
+        <div class="label-id">${escapeHtml(offcut.id)}</div>
+      </div>
+      <div>
+        <div class="label-small">REGAŁ</div>
+        <div class="label-location">${escapeHtml(offcut.storage_location || "BRAK")}</div>
+      </div>
+    </div>
+    <div class="label-dim">${escapeHtml(formatNumber(offcut.length))} × ${escapeHtml(formatNumber(offcut.width))} mm</div>
+    <div class="label-grid">${labelRows}</div>
+  </article>
+  <script>setTimeout(() => window.print(), 300);</script>
+</body>
+</html>`);
+  printWindow.document.close();
+  printWindow.focus();
+}
+
+function editSelectedCutPart() {
+  const selected = selectedCutParts();
+  if (selected.length !== 1) return showToast("Zaznacz jedną formatkę do edycji");
+  selectCutPart(Number(selected[0].id));
+}
+
+function cutPartPayloadFromExisting(part) {
+  return {
+    material_id: part.material_id || null,
+    material_code: part.material_code || "",
+    material_name: part.material_name || "",
+    thickness: part.thickness || "",
+    length: part.length,
+    width: part.width,
+    quantity: part.quantity,
+    texture: Boolean(part.texture),
+    edge_top: Boolean(part.edge_top),
+    edge_bottom: Boolean(part.edge_bottom),
+    edge_left: Boolean(part.edge_left),
+    edge_right: Boolean(part.edge_right),
+    work_milling: Boolean(part.work_milling),
+    work_drilling: Boolean(part.work_drilling),
+    work_lacquer: Boolean(part.work_lacquer),
+    work_other: Boolean(part.work_other),
+    element_type: part.element_type || "",
+    technology: part.technology || "",
+    lacquer_sides: part.lacquer_sides || "",
+    tech_notes: part.tech_notes || "",
+    name: part.name || "",
+    description: part.description || ""
+  };
+}
+
+async function applyTemplateToSelectedCutParts() {
+  const template = findCutTechnologyTemplate(elements.cutPartsTemplateSelect?.value);
+  if (!template) return showToast("Wybierz szablon technologii");
+  const selected = selectedCutParts();
+  if (!selected.length) return showToast("Zaznacz formatki checkboxem");
+  for (const part of selected) {
+    const payload = applyTechnologyTemplateToValues(cutPartPayloadFromExisting(part), template);
+    await postJson(`/api/cut-parts/${part.id}`, payload, "PUT");
+  }
+  await loadCutParts(state.selectedCutJobId);
+  await refreshCutting();
+  showToast(`Zastosowano szablon do formatek: ${selected.length}`);
+}
+
+function fillCutPartEditor(part) {
+  if (!elements.cutPartEditorForm) return;
+  const form = elements.cutPartEditorForm;
+  form.reset();
+  form.elements.quantity.value = "1";
+  form.elements.texture.checked = true;
+  if (!part) return;
+  form.elements.length.value = formatDecimalInput(part.length);
+  form.elements.width.value = formatDecimalInput(part.width);
+  form.elements.quantity.value = formatDecimalInput(part.quantity);
+  form.elements.name.value = part.name || "";
+  form.elements.texture.checked = Boolean(part.texture);
+  form.elements.edge_top.checked = Boolean(part.edge_top);
+  form.elements.edge_bottom.checked = Boolean(part.edge_bottom);
+  form.elements.edge_left.checked = Boolean(part.edge_left);
+  form.elements.edge_right.checked = Boolean(part.edge_right);
+  form.elements.work_milling.checked = Boolean(part.work_milling);
+  form.elements.work_drilling.checked = Boolean(part.work_drilling);
+  form.elements.work_lacquer.checked = Boolean(part.work_lacquer);
+  form.elements.work_other.checked = Boolean(part.work_other);
+  form.elements.element_type.value = part.element_type || "";
+  form.elements.technology.value = part.technology || "";
+  form.elements.lacquer_sides.value = part.lacquer_sides || "";
+  form.elements.tech_notes.value = part.tech_notes || "";
+}
+
+async function saveCutPartEditor(event) {
+  event.preventDefault();
+  if (!state.selectedCutJobId) return showToast("Najpierw wybierz albo zapisz pozycję");
+  const payload = { ...cutPartMaterialPayload(), ...formPayload(elements.cutPartEditorForm) };
+  payload.texture = Boolean(payload.texture);
+  payload.work_milling = Boolean(payload.work_milling);
+  payload.work_drilling = Boolean(payload.work_drilling);
+  payload.work_lacquer = Boolean(payload.work_lacquer);
+  payload.work_other = Boolean(payload.work_other);
+  if (!payload.length || !payload.width || !payload.quantity) return showToast("Podaj D, S i ilość");
+
+  if (state.selectedCutPartId) {
+    await postJson(`/api/cut-parts/${state.selectedCutPartId}`, payload, "PUT");
+    showToast("Formatka zaktualizowana");
+  } else {
+    const saved = await postJson(`/api/cut-jobs/${state.selectedCutJobId}/parts`, payload);
+    state.selectedCutPartId = saved.id;
+    state.highlightedCutPartId = saved.id;
+    showToast("Formatka dodana");
+  }
+  await loadCutParts(state.selectedCutJobId);
+  await refreshCutting();
+  closeCutPartEditor();
 }
 
 function renderCutPartDraftRow() {
@@ -2037,6 +4088,13 @@ function renderCutPartDraftRow() {
       <td><input class="cut-table-check" data-cut-new="1" data-cut-field="edge_bottom" type="checkbox"></td>
       <td><input class="cut-table-check" data-cut-new="1" data-cut-field="edge_left" type="checkbox"></td>
       <td><input class="cut-table-check" data-cut-new="1" data-cut-field="edge_right" type="checkbox"></td>
+      <td><input class="cut-table-check" data-cut-new="1" data-cut-field="work_milling" type="checkbox"></td>
+      <td><input class="cut-table-check" data-cut-new="1" data-cut-field="work_drilling" type="checkbox"></td>
+      <td><input class="cut-table-check" data-cut-new="1" data-cut-field="work_lacquer" type="checkbox"></td>
+      <td><input class="cut-table-check" data-cut-new="1" data-cut-field="work_other" type="checkbox"></td>
+      <td><select class="cut-table-input cut-table-select" data-cut-new="1" data-cut-field="element_type">${cutPreviewSelectOptions(CUT_ELEMENT_TYPES)}</select></td>
+      <td><select class="cut-table-input cut-table-select" data-cut-new="1" data-cut-field="technology">${cutPreviewSelectOptions(CUT_TECHNOLOGIES)}</select></td>
+      <td><select class="cut-table-input cut-table-side" data-cut-new="1" data-cut-field="lacquer_sides">${cutPreviewSelectOptions(CUT_LACQUER_SIDES)}</select></td>
       <td><input class="cut-table-input cut-table-name" data-cut-new="1" data-cut-field="name" placeholder="Nazwa"></td>
       <td><button class="small" data-save-new-cut-part type="button">Dodaj</button></td>
     </tr>
@@ -2084,14 +4142,20 @@ async function saveDraftCutPart(row) {
   }
   const payload = { ...cutPartMaterialPayload(), ...cutPartPayloadFromTableRow(row) };
   if (!payload.length || !payload.width || !payload.quantity) {
-    showToast("Podaj D, S i iloÄąâ€şĂ„â€ˇ");
+    showToast("Podaj D, S i ilość");
     return false;
   }
-  await postJson(`/api/cut-jobs/${state.selectedCutJobId}/parts`, payload);
+  const saved = await postJson(`/api/cut-jobs/${state.selectedCutJobId}/parts`, payload);
+  state.highlightedCutPartId = saved.id;
   await loadCutParts(state.selectedCutJobId);
   await refreshCutting();
-  showToast("Formatka dodana");
+  showToast(`Formatka dodana do pozycji: ${currentCutJobLabel()}`);
   return true;
+}
+
+function currentCutJobLabel() {
+  const job = state.cutJobs.find((item) => Number(item.id) === Number(state.selectedCutJobId));
+  return job?.name || elements.cutJobForm.elements.name.value || `ID ${state.selectedCutJobId}`;
 }
 
 function cutPartPayloadFromTableRow(row) {
@@ -2106,6 +4170,14 @@ function cutPartPayloadFromTableRow(row) {
     edge_bottom: checked("edge_bottom") ? "1" : "",
     edge_left: checked("edge_left") ? "1" : "",
     edge_right: checked("edge_right") ? "1" : "",
+    work_milling: checked("work_milling"),
+    work_drilling: checked("work_drilling"),
+    work_lacquer: checked("work_lacquer"),
+    work_other: checked("work_other"),
+    element_type: field("element_type")?.value || "",
+    technology: field("technology")?.value || "",
+    lacquer_sides: field("lacquer_sides")?.value || "",
+    tech_notes: field("tech_notes")?.value || row.dataset.techNotes || "",
     name: field("name")?.value || ""
   };
 }
@@ -2117,7 +4189,7 @@ function cutPartMaterialPayload() {
     material_id: materialId || null,
     material_code: material?.code || elements.cutPartForm.elements.material_code.value || "",
     material_name: material?.name || elements.cutJobForm.elements.material_name.value || "",
-    thickness: material?.thickness ?? (elements.cutPartForm.elements.thickness.value || null),
+    thickness: material ? materialThicknessValue(material) : (elements.cutPartForm.elements.thickness.value || null),
     work_milling: false,
     work_drilling: false,
     work_lacquer: false,
@@ -2166,7 +4238,7 @@ function renderCutQuoteLines() {
       <td>${formatNumber(row.quantity)}</td>
       <td>${formatMoney(row.unit_price)}</td>
       <td>${formatMoney(row.line_total)}</td>
-      <td><button class="small danger" data-delete-cut-quote="${row.id}" type="button">UsuÄąâ€ž</button></td>
+      <td><button class="small danger" data-delete-cut-quote="${row.id}" type="button">Usuń</button></td>
     </tr>
   `).join("");
   elements.cutQuoteLinesBody.querySelectorAll("[data-delete-cut-quote]").forEach((button) => {
@@ -2178,13 +4250,13 @@ function renderCutQuoteLines() {
       renderCutQuoteLines();
       await refreshCrm();
       await refreshPricing();
-      showToast("Robocizna usuniĂ„â„˘ta");
+      showToast("Robocizna usunięta");
     });
   });
 }
 
 function edgeMark(value) {
-  return value ? "-Ĺ›â€ś" : "";
+  return value ? "✓" : "";
 }
 
 function renderCutTotals(serverTotals) {
@@ -2225,6 +4297,8 @@ function renderOrders() {
     return `
       <tr class="material-row ${paymentClass} ${String(row.id) === String(state.selectedOrderId) ? "selected-row" : ""}" data-id="${row.id}">
         <td>${row.id}</td>
+        <td>${escapeHtml(row.order_number)}</td>
+        <td>${escapeHtml(row.customer_name)}</td>
         <td>${escapeHtml(row.title)}</td>
         <td>${escapeHtml(row.due_date)}</td>
         <td>${escapeHtml(row.production_status)}</td>
@@ -2297,7 +4371,7 @@ function renderCalendar() {
   const todayBucket = rows.find((row) => row.day === today);
   elements.calendarSummary.innerHTML = `
     <div><strong>Dzisiaj:</strong> ${formatCalendarDate(today)} | zamówienia: ${todayBucket?.orders.length || 0} | pozycje: ${todayBucket?.jobCount || 0} | m2: ${formatNumber(todayBucket?.areaM2 || 0)}</div>
-    <div><strong>Razem:</strong> zamówienia: ${formatNumber(totalOrders)} | nie zapÄąâ€šacone: ${formatNumber(unpaidOrders)}</div>
+    <div><strong>Razem:</strong> zamówienia: ${formatNumber(totalOrders)} | nie zapłacone: ${formatNumber(unpaidOrders)}</div>
   `;
   elements.calendarBody.innerHTML = rows.map((row) => {
     const hasUnpaid = row.unpaidCount > 0;
@@ -2367,7 +4441,7 @@ function renderDashboard() {
         <td>${formatNumber(row.required)}</td>
       </tr>
     `).join("")
-    : `<tr><td colspan="4">Brak brakujĂ„â€¦cych materiałÄ‚Ĺ‚w dla aktywnych zamówień.</td></tr>`;
+    : `<tr><td colspan="4">Brak brakujących materiałów dla aktywnych zamówień.</td></tr>`;
 
   elements.dashboardPaymentsBody.innerHTML = paymentRows.length
     ? paymentRows.slice(0, 50).map((order) => `
@@ -2470,12 +4544,22 @@ function fillMaterialForm(id) {
 }
 
 function fillCustomerForm(id) {
-  const row = state.customers.find((item) => item.id === id);
+  const customerId = Number(id);
+  const row = state.customers.find((item) => Number(item.id) === customerId);
   if (!row) return;
-  state.selectedCustomerId = id;
+  state.selectedCustomerId = customerId;
+  setCustomerEditMode(customerId);
   for (const field of elements.customerForm.elements) {
     if (!field.name) continue;
     field.value = row[field.name] ?? "";
+  }
+}
+
+function setCustomerEditMode(id = null) {
+  state.editingCustomerId = id ? Number(id) : null;
+  const submitButton = elements.customerForm?.querySelector('button[type="submit"]');
+  if (submitButton) {
+    submitButton.textContent = state.editingCustomerId ? "ZAPISZ ZMIANY KLIENTA" : "ZAPISZ KLIENTA";
   }
 }
 
@@ -2487,6 +4571,17 @@ function fillPriceItemForm(id) {
     if (!field.name) continue;
     field.value = row[field.name] ?? "";
   }
+}
+
+function fillCutTechnologyPriceForm(id) {
+  const row = state.cutTechnologyPrices.find((item) => item.id === id);
+  if (!row) return;
+  state.selectedCutTechnologyPriceId = id;
+  for (const field of elements.cutTechnologyPriceForm.elements) {
+    if (!field.name) continue;
+    field.value = row[field.name] ?? "";
+  }
+  if (elements.saveCutTechnologyPriceBtn) elements.saveCutTechnologyPriceBtn.textContent = "ZAPISZ ZMIANY";
 }
 
 function fillOffcutForm(id, rows = state.offcuts || []) {
@@ -2506,8 +4601,7 @@ function selectOrderRow(id) {
   state.selectedOrderId = id;
   elements.paymentForm.elements.order_id.value = id;
   elements.quoteLineForm.elements.order_id.value = String(id);
-  if (elements.globalCutOrderSelect) elements.globalCutOrderSelect.value = String(id);
-  if (elements.cuttingPositionsPanel && id) elements.cuttingPositionsPanel.style.display = "block";
+  cutOrderField().value = String(id);
   prepareNotification(id);
   loadQuoteLines(id);
   renderOrders();
@@ -2516,34 +4610,35 @@ function selectOrderRow(id) {
 
 async function deleteSelectedCustomer() {
   if (!state.selectedCustomerId) return showToast("Najpierw zaznacz klienta");
-  if (!confirm("UsunĂ„â€¦Ă„â€ˇ klienta z aktywnej listy? Historia zamówień zostanie zachowana.")) return;
+  if (!confirm("Usunąć klienta z aktywnej listy? Historia zamówień zostanie zachowana.")) return;
   await fetchJson(`/api/customers/${state.selectedCustomerId}`, { method: "DELETE" });
   state.selectedCustomerId = null;
   state.customerRelatedDocs = [];
+  setCustomerEditMode(null);
   elements.customerForm.reset();
   await refreshCrm();
   renderCustomerRelatedDocs();
-  showToast("Klient usuniĂ„â„˘ty");
+  showToast("Klient usunięty");
 }
 
 async function deleteCustomerDocumentByIndex(index) {
   const doc = state.customerRelatedDocs[index];
-  if (!doc?.can_delete || !doc.delete_url) return showToast("Tego dokumentu nie moÄąÄ˝na usunĂ„â€¦Ă„â€ˇ tutaj");
-  if (!confirm(`UsunĂ„â€¦Ă„â€ˇ dokument: ${doc.type_label} ${doc.document}?`)) return;
+  if (!doc?.can_delete || !doc.delete_url) return showToast("Tego dokumentu nie można usunąć tutaj");
+  if (!confirm(`Usunąć dokument: ${doc.type_label} ${doc.document}?`)) return;
   await fetchJson(doc.delete_url, { method: "DELETE" });
   await refreshCrm();
   await loadCustomerRelatedDocs(state.selectedCustomerId);
-  showToast("Dokument usuniĂ„â„˘ty");
+  showToast("Dokument usunięty");
 }
 
 async function deleteCustomerOrderBundleByIndex(index) {
   const doc = state.customerRelatedDocs[index];
-  if (!doc || doc.type !== "order") return showToast("Zaznacz zamówienie do usuniĂ„â„˘cia kompletu");
-  if (!confirm(`UsunĂ„â€¦Ă„â€ˇ cały komplet zamówienia ${doc.document}: wpłaty, wyceny, formatki i zamówienie?`)) return;
+  if (!doc || doc.type !== "order") return showToast("Zaznacz zamówienie do usunięcia kompletu");
+  if (!confirm(`Usunąć cały komplet zamówienia ${doc.document}: wpłaty, wyceny, formatki i zamówienie?`)) return;
   const result = await fetchJson(`/api/orders/${doc.id}/full`, { method: "DELETE" });
   await refreshCrm();
   await loadCustomerRelatedDocs(state.selectedCustomerId);
-  showToast(`UsuniĂ„â„˘to komplet: ${result.orders || 0} zamówienie`);
+  showToast(`Usunięto komplet: ${result.orders || 0} zamówienie`);
 }
 
 async function deleteSelectedCustomerDocs() {
@@ -2552,14 +4647,14 @@ async function deleteSelectedCustomerDocs() {
   const docs = checked
     .map((input) => state.customerRelatedDocs[Number(input.dataset.docIndex)])
     .filter((doc) => doc?.can_delete && doc.delete_url);
-  if (!docs.length) return showToast("Zaznacz dokumenty, ktÄ‚Ĺ‚re moÄąÄ˝na usunĂ„â€¦Ă„â€ˇ");
-  if (!confirm(`UsunĂ„â€¦Ă„â€ˇ zaznaczone dokumenty: ${docs.length}?`)) return;
+  if (!docs.length) return showToast("Zaznacz dokumenty, które można usunąć");
+  if (!confirm(`Usunąć zaznaczone dokumenty: ${docs.length}?`)) return;
   for (const doc of docs) {
     await fetchJson(doc.delete_url, { method: "DELETE" });
   }
   await refreshCrm();
   await loadCustomerRelatedDocs(state.selectedCustomerId);
-  showToast(`UsuniĂ„â„˘to dokumenty: ${docs.length}`);
+  showToast(`Usunięto dokumenty: ${docs.length}`);
 }
 
 async function deleteSelectedCustomerOrderBundle() {
@@ -2571,7 +4666,7 @@ async function deleteSelectedCustomerOrderBundle() {
 
 async function deleteSelectedOrder() {
   if (!state.selectedOrderId) return showToast("Najpierw zaznacz zamówienie");
-  if (!confirm("UsunĂ„â€¦Ă„â€ˇ zamówienie?")) return;
+  if (!confirm("Usunąć zamówienie?")) return;
   const deletedId = state.selectedOrderId;
   try {
     await fetchJson(`/api/orders/${deletedId}`, { method: "DELETE" });
@@ -2580,46 +4675,59 @@ async function deleteSelectedOrder() {
     const blockers = Array.isArray(error.blockers) && error.blockers.length
       ? `\n\nBlokady:\n${error.blockers.map((blocker) => `- ${blocker.message || blocker.code}`).join("\n")}`
       : "";
-    const deleteBundle = confirm(`Zamówienie ma powiązane dokumenty i nie moÄąÄ˝na go usunĂ„â€¦Ă„â€ˇ pojedynczo.${blockers}\n\nUsunĂ„â€¦Ă„â€ˇ cały komplet: wpłaty, wyceny, formatki i zamówienie?`);
+    const deleteBundle = confirm(`Zamówienie ma powiązane dokumenty i nie można go usunąć pojedynczo.${blockers}\n\nUsunąć cały komplet: wpłaty, wyceny, formatki i zamówienie?`);
     if (!deleteBundle) return;
     await fetchJson(`/api/orders/${deletedId}/full`, { method: "DELETE" });
   }
   if (String(state.selectedOrderId) === String(deletedId)) await resetOrderWorkspace();
   await refreshAll();
-  showToast("Zamówienie usuniĂ„â„˘te");
+  showToast("Zamówienie usunięte");
 }
 
 async function deleteSelectedPriceItem() {
   if (!state.selectedPriceItemId) return showToast("Najpierw zaznacz pozycję cennika");
-  if (!confirm("UsunĂ„â€¦Ă„â€ˇ pozycję cennika?")) return;
+  if (!confirm("Usunąć pozycję cennika?")) return;
   await fetchJson(`/api/price-items/${state.selectedPriceItemId}`, { method: "DELETE" });
   state.selectedPriceItemId = null;
   elements.priceItemForm.reset();
   await refreshPricing();
-  showToast("Pozycja cennika usuniĂ„â„˘ta");
+  showToast("Pozycja cennika usunięta");
+}
+
+async function deleteSelectedCutTechnologyPrice() {
+  if (!state.selectedCutTechnologyPriceId) return showToast("Najpierw zaznacz cenę technologii");
+  if (!confirm("Usunąć cenę technologii?")) return;
+  await fetchJson(`/api/cut-technology-prices/${state.selectedCutTechnologyPriceId}`, { method: "DELETE" });
+  state.selectedCutTechnologyPriceId = null;
+  elements.cutTechnologyPriceForm.reset();
+  if (elements.saveCutTechnologyPriceBtn) elements.saveCutTechnologyPriceBtn.textContent = "DODAJ NOWĄ POZYCJĘ";
+  await refreshPricing();
+  await refreshCrm();
+  renderCutParts();
+  showToast("Cena technologii usunięta");
 }
 
 async function deleteSelectedMaterial() {
   if (!state.selectedId) return showToast("Najpierw zaznacz materiał");
-  if (!confirm("UsunĂ„â€¦Ă„â€ˇ tĂ„â„˘ pozycję materiału?")) return;
+  if (!confirm("Usunąć tę pozycję materiału?")) return;
   await fetchJson(`/api/materials/${state.selectedId}`, { method: "DELETE" });
   await refreshAll();
   resetMaterialForm();
-  showToast("Pozycja materiału usuniĂ„â„˘ta");
+  showToast("Pozycja materiału usunięta");
 }
 
 async function deleteSelectedOffcut() {
-  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkĂ„â„˘");
-  if (!confirm("UsunĂ„â€¦Ă„â€ˇ resztkĂ„â„˘?")) return;
+  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkę");
+  if (!confirm("Usunąć resztkę?")) return;
   await fetchJson(`/api/offcuts/${encodeURIComponent(state.selectedOffcutId)}`, { method: "DELETE" });
   state.selectedOffcutId = null;
   elements.offcutForm.reset();
   await refreshOffcuts();
-  showToast("Resztka usuniĂ„â„˘ta");
+  showToast("Resztka usunięta");
 }
 
 async function assignSelectedOffcutStorage() {
-  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkĂ„â„˘");
+  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkę");
   const row = await postJson(`/api/offcuts/${encodeURIComponent(state.selectedOffcutId)}/assign-storage`, {});
   state.selectedOffcutId = row.id;
   await refreshOffcuts();
@@ -2628,8 +4736,8 @@ async function assignSelectedOffcutStorage() {
 }
 
 async function reserveSelectedOffcut() {
-  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkĂ„â„˘");
-  const project = prompt("Do jakiego projektu / rozkroju rezerwujesz tĂ„â„˘ resztkĂ„â„˘?", "") || "";
+  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkę");
+  const project = prompt("Do jakiego projektu / rozkroju rezerwujesz tę resztkę?", "") || "";
   const row = await postJson(`/api/offcuts/${encodeURIComponent(state.selectedOffcutId)}/reserve`, {
     station: getStationName(),
     project
@@ -2641,7 +4749,7 @@ async function reserveSelectedOffcut() {
 }
 
 async function releaseSelectedOffcut() {
-  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkĂ„â„˘");
+  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkę");
   const row = await postJson(`/api/offcuts/${encodeURIComponent(state.selectedOffcutId)}/release`, {});
   state.selectedOffcutId = row.id;
   await refreshOffcuts();
@@ -2650,13 +4758,13 @@ async function releaseSelectedOffcut() {
 }
 
 async function useSelectedOffcut() {
-  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkĂ„â„˘");
-  if (!confirm("OznaczyĂ„â€ˇ resztkĂ„â„˘ jako zuÄąÄ˝ytĂ„â€¦? Nie bĂ„â„˘dzie juÄąÄ˝ widoczna jako wolna dla GibLab.")) return;
+  if (!state.selectedOffcutId) return showToast("Najpierw zaznacz resztkę");
+  if (!confirm("Oznaczyć resztkę jako zużytą? Nie będzie już widoczna jako wolna dla GibLab.")) return;
   const row = await postJson(`/api/offcuts/${encodeURIComponent(state.selectedOffcutId)}/use`, { station: getStationName() });
   state.selectedOffcutId = row.id;
   await refreshOffcuts();
   fillOffcutForm(row.id);
-  showToast("Resztka oznaczona jako zuÄąÄ˝yta");
+  showToast("Resztka oznaczona jako zużyta");
 }
 
 function fillOffcutStorageForm(id) {
@@ -2672,7 +4780,7 @@ function fillOffcutStorageForm(id) {
 }
 
 async function deleteOffcutStorageLocation(id) {
-  if (!confirm("UsunĂ„â€¦Ă„â€ˇ reguÄąâ€šĂ„â„˘ regaÄąâ€šu? Resztki nie zniknĂ„â€¦, ale po przeliczeniu mogĂ„â€¦ dostaĂ„â€ˇ inne miejsce.")) return;
+  if (!confirm("Usunąć regułę regału? Resztki nie znikną, ale po przeliczeniu mogą dostać inne miejsce.")) return;
   await fetchJson(`/api/offcut-storage-locations/${id}`, { method: "DELETE" });
   if (Number(state.selectedOffcutStorageLocationId) === Number(id)) {
     state.selectedOffcutStorageLocationId = null;
@@ -2680,11 +4788,11 @@ async function deleteOffcutStorageLocation(id) {
     if (elements.offcutStorageForm?.elements.active) elements.offcutStorageForm.elements.active.checked = true;
   }
   await refreshOffcutStorageLocations();
-  showToast("ReguÄąâ€ša regaÄąâ€šu usuniĂ„â„˘ta");
+  showToast("Reguła regału usunięta");
 }
 
 async function reassignAllOffcutStorage() {
-  if (!confirm("PrzeliczyĂ„â€ˇ miejsce dla wszystkich dostĂ„â„˘pnych resztek według aktualnych regaÄąâ€šÄ‚Ĺ‚w?")) return;
+  if (!confirm("Przeliczyć miejsce dla wszystkich dostępnych resztek według aktualnych regałów?")) return;
   const result = await postJson("/api/offcuts/reassign-storage", {});
   await refreshOffcuts();
   showToast(`Przeliczono resztki: ${result.updated}`);
@@ -2707,8 +4815,7 @@ function fillOrderForm(id) {
   state.selectedOrderId = id;
   elements.paymentForm.elements.order_id.value = id;
   elements.quoteLineForm.elements.order_id.value = String(id);
-  if (elements.globalCutOrderSelect) elements.globalCutOrderSelect.value = String(id);
-  if (elements.cuttingPositionsPanel && id) elements.cuttingPositionsPanel.style.display = "block";
+  cutOrderField().value = String(id);
   for (const field of elements.orderForm.elements) {
     if (!field.name) continue;
     if (field.type === "checkbox") field.checked = Boolean(row[field.name]);
@@ -2741,8 +4848,7 @@ function openCutPositionForSelectedOrder() {
 function openSelectedOrderCutting() {
   if (!state.selectedOrderId) return showToast("Najpierw kliknij zamówienie");
   const orderId = Number(state.selectedOrderId);
-  if (elements.globalCutOrderSelect) elements.globalCutOrderSelect.value = String(orderId);
-  if (elements.cuttingPositionsPanel && orderId) elements.cuttingPositionsPanel.style.display = "block";
+  cutOrderField().value = String(orderId);
   const jobs = state.cutJobs.filter((job) => Number(job.order_id) === orderId);
   activateTab("cutting");
   if (jobs.length) {
@@ -2750,23 +4856,26 @@ function openSelectedOrderCutting() {
     showToast("Otwarto formatki zamówienia");
   } else {
     prepareNewCutJob(orderId);
-    showToast("Brak pozycji formatek. Przygotowano nowĂ„â€¦ pozycję.");
+    showToast("Brak pozycji formatek. Przygotowano nową pozycję.");
   }
 }
 
 function prepareNewCutJob(orderId) {
   const count = state.cutJobs.filter((job) => Number(job.order_id) === Number(orderId)).length + 1;
   state.selectedCutJobId = null;
+  state.selectedCutPartId = null;
+  state.selectedCutPartIds.clear();
   state.cutParts = [];
   state.cutQuoteLines = [];
+  closeCutPartEditor();
   elements.cutJobForm.reset();
   elements.cutPartForm.reset();
   renderMaterialChips(null);
-  if (elements.globalCutOrderSelect) elements.globalCutOrderSelect.value = String(orderId);
-  if (elements.cuttingPositionsPanel && orderId) elements.cuttingPositionsPanel.style.display = "block";
+  cutOrderField().value = String(orderId);
   elements.cutJobForm.elements.name.value = `Pozycja ${count}`;
   elements.cutPartForm.elements.quantity.value = "1";
   elements.cutPartForm.querySelector('[name="texture"]').checked = true;
+  renderCutSourcePreview(null);
   renderCutJobs();
   renderCutParts();
   renderCutTotals();
@@ -2774,22 +4883,21 @@ function prepareNewCutJob(orderId) {
 }
 
 async function deleteSelectedCutJob() {
-  if (!state.selectedCutJobId) return showToast("Najpierw kliknij pozycję do usuniĂ„â„˘cia");
+  if (!state.selectedCutJobId) return showToast("Najpierw kliknij pozycję do usunięcia");
   const job = state.cutJobs.find((item) => Number(item.id) === Number(state.selectedCutJobId));
   const label = [job?.order_number, job?.name].filter(Boolean).join(" - ") || `ID ${state.selectedCutJobId}`;
-  if (!confirm(`UsunĂ„â€¦Ă„â€ˇ pozycję "${label}" razem z formatkami i wycenĂ„â€¦ tej pozycji?`)) return;
-  const orderId = Number(elements.globalCutOrderSelect?.value || state.selectedOrderId || job?.order_id || 0);
+  if (!confirm(`Usunąć pozycję "${label}" razem z formatkami i wyceną tej pozycji?`)) return;
+  const orderId = Number(cutOrderField().value || state.selectedOrderId || job?.order_id || 0);
   await fetchJson(`/api/cut-jobs/${state.selectedCutJobId}`, { method: "DELETE" });
   resetCutJobForm();
   if (orderId) {
-    if (elements.globalCutOrderSelect) elements.globalCutOrderSelect.value = String(orderId);
-  if (elements.cuttingPositionsPanel && orderId) elements.cuttingPositionsPanel.style.display = "block";
+    cutOrderField().value = String(orderId);
     state.selectedOrderId = orderId;
   }
   await refreshCutting();
   await refreshCrm();
   await refreshPricing();
-  showToast("Pozycja usuniĂ„â„˘ta");
+  showToast("Pozycja usunięta");
 }
 
 function prepareNextCutPartRow(selectedMaterialId) {
@@ -2813,14 +4921,18 @@ function prepareNextCutPartRow(selectedMaterialId) {
 
 function resetCutJobForm() {
   state.selectedCutJobId = null;
+  state.selectedCutPartId = null;
+  state.selectedCutPartIds.clear();
   state.cutParts = [];
   state.cutQuoteLines = [];
+  closeCutPartEditor();
   elements.cutJobForm.reset();
   elements.cutPartForm.reset();
   renderMaterialChips(null);
   elements.cutPartForm.elements.quantity.value = "1";
   elements.cutPartForm.querySelector('[name="texture"]').checked = true;
   document.querySelector("#edgeAll").checked = false;
+  renderCutSourcePreview(null);
   renderCutJobs();
   renderCutParts();
   renderCutTotals();
@@ -2831,6 +4943,9 @@ function fillCutJobForm(id) {
   const row = state.cutJobs.find((item) => item.id === id);
   if (!row) return;
   state.selectedCutJobId = id;
+  state.selectedCutPartId = null;
+  state.selectedCutPartIds.clear();
+  closeCutPartEditor();
   for (const field of elements.cutJobForm.elements) {
     if (!field.name) continue;
     field.value = row[field.name] ?? "";
@@ -2839,6 +4954,7 @@ function fillCutJobForm(id) {
     const material = state.flat.find((item) => String(item.id) === String(row.material_id));
     if (material) applyCutJobMaterial(material);
   }
+  renderCutSourcePreview(currentCutJobSource());
   loadCutParts(id);
   renderCutJobs();
 }
@@ -2846,42 +4962,401 @@ function fillCutJobForm(id) {
 async function importCutTextFromPhoto(event) {
   const file = event.target.files[0];
   if (!file) return;
-  elements.cutTextImportStatus.textContent = "Czytam zdjĂ„â„˘cie...";
+  state.lastCutPhotoFile = file;
+  await scanCutPhoto(file);
+  event.target.value = "";
+}
+
+async function scanCutPhoto(file) {
+  elements.cutTextImportStatus.textContent = "Czytam zdjęcie...";
+  elements.retryCutPhotoBtn.hidden = true;
+  elements.retryCutPhotoBtn.disabled = true;
+  renderCutSourcePreview({ name: file.name, url: URL.createObjectURL(file), temporary: true });
   const form = new FormData();
   form.append("photo", file);
+  if (state.selectedCutJobId) form.append("cut_job_id", String(state.selectedCutJobId));
   try {
     const result = await fetchJson("/api/ocr/cut-text", { method: "POST", body: form });
-    elements.cutTextImport.value = result.text || "";
-    const count = parseCutTextRows(result.text || "").length;
-    const sourceLabel = result.source === "gemini" ? "AI Vision" : "OCR";
-    const warningText = Array.isArray(result.warnings) && result.warnings.length ? ` ${result.warnings.join(" ")}` : "";
-    elements.cutTextImportStatus.textContent = result.text
-      ? `${sourceLabel}: znaleziono ${count} formatek do sprawdzenia.${warningText}`
-      : "Nie znaleziono tekstu na zdjĂ„â„˘ciu";
-    showToast("Tekst ze zdjĂ„â„˘cia wstawiony do pola");
+    if (result.text) elements.cutTextImport.value = result.text;
+    const engineText = result.engine === "gemini"
+      ? "AI Vision Gemini"
+      : result.engine === "openai"
+        ? "AI Vision OpenAI"
+        : "lokalny OCR";
+    if (result.retryRecommended) {
+      elements.cutTextImportStatus.textContent = result.warnings?.[0] || "AI chwilowo niedostępny. Ponów skan.";
+      elements.retryCutPhotoBtn.hidden = false;
+      showToast("Nie rozpoznano wymiarów. Ponów skan AI.");
+    } else {
+      elements.cutTextImportStatus.textContent = result.text
+        ? `Tekst ze zdjęcia gotowy do sprawdzenia (${engineText})`
+        : `Nie znaleziono tekstu na zdjęciu (${engineText})`;
+      showToast(result.text ? "Tekst ze zdjęcia wstawiony do pola" : "Nie znaleziono wymiarów");
+    }
+    if (result.sourceImage?.url) renderCutSourcePreview(result.sourceImage);
+    if (result.text) {
+      updateCutTextImportStatus();
+      elements.cutTextImportStatus.textContent = `${elements.cutTextImportStatus.textContent} (${engineText})`;
+    }
   } catch (error) {
-    elements.cutTextImportStatus.textContent = error.message || "Nie udaÄąâ€šo siĂ„â„˘ odczytaĂ„â€ˇ zdjĂ„â„˘cia";
-    showToast("Nie udaÄąâ€šo siĂ„â„˘ odczytaĂ„â€ˇ zdjĂ„â„˘cia");
+    elements.cutTextImportStatus.textContent = error.message || "Nie udało się odczytać zdjęcia";
+    elements.retryCutPhotoBtn.hidden = false;
+    showToast("Nie udało się odczytać zdjęcia");
   } finally {
-    event.target.value = "";
+    elements.retryCutPhotoBtn.disabled = false;
   }
+}
+
+function currentCutJobSource() {
+  const job = state.cutJobs.find((item) => Number(item.id) === Number(state.selectedCutJobId));
+  if (!job?.source_image_path) return null;
+  return {
+    name: job.source_image_name || job.source_file || "Zdjęcie źródłowe",
+    url: `/api/cut-jobs/${job.id}/source-image?ts=${encodeURIComponent(job.source_image_path || job.source_image_name || "")}`
+  };
+}
+
+function renderCutSourcePreview(source) {
+  if (!elements.cutSourcePreview) return;
+  if (!source?.url) {
+    elements.cutSourcePreview.innerHTML = "";
+    return;
+  }
+  elements.cutSourcePreview.innerHTML = `
+    <div class="cut-source-preview-title">Źródło importu</div>
+    <a href="${escapeHtml(source.url)}" target="_blank" rel="noopener">
+      <img src="${escapeHtml(source.url)}" alt="${escapeHtml(source.name || "Źródło importu")}">
+    </a>
+    <div class="cut-source-preview-name">
+      ${escapeHtml(source.name || "Zdjęcie")}
+      ${source.temporary ? "<span>niezapisane przy pozycji</span>" : ""}
+    </div>
+  `;
+}
+
+function initializeCutPreviewTools() {
+  fillTemplateSelect(elements.cutPreviewTemplate, "Szablon technologii");
+  fillTemplateSelect(elements.cutPartsTemplateSelect, "Szablon dla zaznaczonych");
+  fillCutPreviewSelect(elements.cutPreviewElementType, "Typ elementu", CUT_ELEMENT_TYPES);
+  fillCutPreviewSelect(elements.cutPreviewTechnology, "Technologia", CUT_TECHNOLOGIES);
+  fillCutPreviewSelect(elements.cutPreviewLacquerSides, "Strony lakierowania", CUT_LACQUER_SIDES);
+  fillTemplateSelect(elements.cutPartEditorForm?.elements.technology_template, "Szablon technologii");
+  fillCutPreviewSelect(elements.cutPartEditorForm?.elements.element_type, "Typ elementu", CUT_ELEMENT_TYPES);
+  fillCutPreviewSelect(elements.cutPartEditorForm?.elements.technology, "Technologia", CUT_TECHNOLOGIES);
+  fillCutPreviewSelect(elements.cutPartEditorForm?.elements.lacquer_sides, "Strony lakierowania", CUT_LACQUER_SIDES);
+}
+
+function fillTemplateSelect(select, placeholder) {
+  if (!select) return;
+  const currentValue = select.value;
+  select.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>` +
+    allCutTechnologyTemplates().map((template) => `<option value="${escapeHtml(template.key)}">${escapeHtml(template.name)}</option>`).join("");
+  if (allCutTechnologyTemplates().some((template) => template.key === currentValue)) select.value = currentValue;
+}
+
+function fillCutPreviewSelect(select, placeholder, values) {
+  if (!select) return;
+  select.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>` +
+    values.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join("");
+}
+
+function cutPreviewSelectOptions(values, selectedValue = "") {
+  return `<option value=""></option>` + values.map((value) => `
+    <option value="${escapeHtml(value)}" ${String(selectedValue || "") === value ? "selected" : ""}>${escapeHtml(value)}</option>
+  `).join("");
+}
+
+function findCutTechnologyTemplate(keyOrName) {
+  const value = String(keyOrName || "");
+  if (!value) return null;
+  return allCutTechnologyTemplates().find((template) => template.key === value || template.name === value || template.technology === value) || null;
+}
+
+function allCutTechnologyTemplates() {
+  const templates = [...CUT_TECHNOLOGY_TEMPLATES];
+  const knownKeys = new Set(templates.map((template) => template.key));
+  for (const row of state.cutTechnologyPrices) {
+    const key = String(row.template_key || `cennik_${row.id}`).trim();
+    if (!key || knownKeys.has(key)) continue;
+    templates.push({
+      key,
+      name: row.name,
+      element_type: row.element_type,
+      technology: row.technology,
+      lacquer_sides: row.lacquer_sides,
+      label: row.name || row.technology || "Pozycja cennika",
+      pricing_unit: row.unit,
+      default_price_net: row.unit_price,
+      work_milling: normalizeText(row.technology).includes("frez"),
+      work_drilling: normalizeText(row.technology).includes("otwor"),
+      work_lacquer: normalizeText(`${row.technology} ${row.name}`).includes("lakier"),
+      work_other: false
+    });
+    knownKeys.add(key);
+  }
+  return templates;
+}
+
+function applyTechnologyTemplateToValues(values, template) {
+  if (!template) return values;
+  return {
+    ...values,
+    element_type: template.element_type,
+    technology: template.technology,
+    lacquer_sides: template.lacquer_sides,
+    tech_notes: template.label,
+    work_milling: Boolean(template.work_milling),
+    work_drilling: Boolean(template.work_drilling),
+    work_lacquer: Boolean(template.work_lacquer),
+    work_other: Boolean(template.work_other)
+  };
+}
+
+function appendCutImportTechnology(form) {
+  const selectedTemplate = findCutTechnologyTemplate(elements.cutPreviewTemplate?.value)
+    || findCutTechnologyTemplate("bez_technologii");
+  const values = applyTechnologyTemplateToValues({
+    element_type: elements.cutPreviewElementType?.value || "",
+    technology: elements.cutPreviewTechnology?.value || "",
+    lacquer_sides: elements.cutPreviewLacquerSides?.value || "",
+    tech_notes: elements.cutPreviewTechNotes?.value || "",
+    work_milling: Boolean(elements.cutPreviewWorkMilling?.checked),
+    work_drilling: Boolean(elements.cutPreviewWorkDrilling?.checked),
+    work_lacquer: Boolean(elements.cutPreviewWorkLacquer?.checked),
+    work_other: Boolean(elements.cutPreviewWorkOther?.checked)
+  }, selectedTemplate);
+
+  form.append("technology_template", selectedTemplate?.key || "bez_technologii");
+  Object.entries(values).forEach(([key, value]) => form.append(key, String(value)));
+}
+
+function applyTechnologyTemplateToPreviewTools(template) {
+  if (!template) return;
+  elements.cutPreviewElementType.value = template.element_type;
+  elements.cutPreviewTechnology.value = template.technology;
+  elements.cutPreviewLacquerSides.value = template.lacquer_sides;
+  elements.cutPreviewTechNotes.value = template.label;
+  elements.cutPreviewWorkMilling.checked = Boolean(template.work_milling);
+  elements.cutPreviewWorkDrilling.checked = Boolean(template.work_drilling);
+  elements.cutPreviewWorkLacquer.checked = Boolean(template.work_lacquer);
+  elements.cutPreviewWorkOther.checked = Boolean(template.work_other);
+}
+
+function applyTechnologyTemplateToForm(form, template) {
+  if (!form || !template) return;
+  form.elements.element_type.value = template.element_type;
+  form.elements.technology.value = template.technology;
+  form.elements.lacquer_sides.value = template.lacquer_sides;
+  form.elements.tech_notes.value = template.label;
+  form.elements.work_milling.checked = Boolean(template.work_milling);
+  form.elements.work_drilling.checked = Boolean(template.work_drilling);
+  form.elements.work_lacquer.checked = Boolean(template.work_lacquer);
+  form.elements.work_other.checked = Boolean(template.work_other);
+}
+
+function applyCutPreviewDefaultsToSelected() {
+  const rows = [...elements.cutTextPreview?.querySelectorAll("[data-preview-row]") || []]
+    .filter((row) => row.querySelector('[data-field="include"]')?.checked);
+  if (!rows.length) return showToast("Zaznacz formatki w podglądzie");
+
+  const selectedTemplate = findCutTechnologyTemplate(elements.cutPreviewTemplate?.value);
+  const values = applyTechnologyTemplateToValues({
+    element_type: elements.cutPreviewElementType?.value || "",
+    technology: elements.cutPreviewTechnology?.value || "",
+    lacquer_sides: elements.cutPreviewLacquerSides?.value || "",
+    tech_notes: elements.cutPreviewTechNotes?.value || "",
+    work_milling: elements.cutPreviewWorkMilling?.checked,
+    work_drilling: elements.cutPreviewWorkDrilling?.checked,
+    work_lacquer: elements.cutPreviewWorkLacquer?.checked,
+    work_other: elements.cutPreviewWorkOther?.checked
+  }, selectedTemplate);
+
+  rows.forEach((row) => {
+    for (const [field, value] of Object.entries(values)) {
+      const input = row.querySelector(`[data-field="${field}"]`);
+      if (!input) continue;
+      if (input.type === "checkbox") input.checked = Boolean(value);
+      else if (value !== "") input.value = value;
+    }
+  });
+  showToast(`Zastosowano do ${rows.length} formatek`);
 }
 
 function updateCutTextImportStatus() {
   const text = elements.cutTextImport.value || "";
   if (!text.trim()) {
     elements.cutTextImportStatus.textContent = "";
+    renderCutTextPreview([], "");
     return;
   }
-  const count = parseCutTextRows(text).length;
+  const rows = parseCutTextRows(text);
+  const count = rows.length;
   elements.cutTextImportStatus.textContent = count
-    ? `Znaleziono ${count} prostych formatek w tekscie`
-    : "Tekst jest odczytany, ale nie widze prostych formatek D x S";
+    ? `Znaleziono ${count} prostych formatek w tekście`
+    : "Tekst jest odczytany, ale nie widzę prostych formatek D x S";
+  renderCutTextPreview(rows, text);
+}
+
+function parseCutTextRows(text) {
+  const normalizedText = normalizeCutText(text);
+  let color = (normalizedText.match(/kolor\s*:\s*([^\n\r]+)/i)?.[1] || "").trim();
+  color = color.replace(/\s*Pr\s*=.*$/i, "").replace(/,.*$/, "").trim();
+  const isLacqueredFront = /fronty\s+lakierowane/i.test(normalizedText);
+  const baseName = [isLacqueredFront ? "Front lakierowany" : "", color].filter(Boolean).join(" ");
+  const defaultMilling = /\bfronty\s+frezowane\b/i.test(normalizedText);
+
+  return normalizedText
+    .split(/\r?\n/)
+    .map((line) => parseCutTextLineSmart(line, baseName, isLacqueredFront, defaultMilling))
+    .filter(Boolean);
+}
+
+function renderCutTextPreview(rows, sourceText = elements.cutTextImport?.value || "") {
+  if (!elements.cutTextPreview) return;
+  elements.cutTextPreview.dataset.sourceText = normalizeCutText(sourceText).trim();
+  if (!rows.length) {
+    elements.cutTextPreview.innerHTML = "";
+    return;
+  }
+  const totalQuantity = rows.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+  const warningCount = rows.filter(cutTextPreviewWarning).length;
+  elements.cutTextPreview.innerHTML = `
+    <div class="cut-text-preview-title">
+      <span>Podgląd importu: ${rows.length} pozycji / ${formatNumber(totalQuantity)} szt.</span>
+      ${warningCount ? `<span class="status-warning">Sprawdź: ${warningCount}</span>` : ""}
+    </div>
+    <div class="cut-text-preview-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Dodaj</th>
+            <th>Lp.</th>
+            <th>D</th>
+            <th>S</th>
+            <th>Ilość</th>
+            <th title="Okleina Długość Góra">OB</th>
+            <th title="Okleina Długość Dół">OH</th>
+            <th title="Okleina Szerokość Lewa">OL</th>
+            <th title="Okleina Szerokość Prawa">OP</th>
+            <th>Frez</th>
+            <th>Otwór</th>
+            <th>Lakier</th>
+            <th>Skos</th>
+            <th>Typ elementu</th>
+            <th>Technologia</th>
+            <th>Strony</th>
+            <th>Uwagi tech.</th>
+            <th>Nazwa / uwagi</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row, index) => `
+            <tr class="${cutTextPreviewWarning(row) ? "preview-warning-row" : ""}" data-preview-row>
+              <td><input class="cut-preview-check" type="checkbox" data-field="include" checked></td>
+              <td>${index + 1}</td>
+              <td><input class="cut-preview-input cut-preview-number" data-field="length" value="${escapeHtml(cutPreviewValue(row.length))}" inputmode="decimal"></td>
+              <td><input class="cut-preview-input cut-preview-number" data-field="width" value="${escapeHtml(cutPreviewValue(row.width))}" inputmode="decimal"></td>
+              <td><input class="cut-preview-input cut-preview-qty" data-field="quantity" value="${escapeHtml(cutPreviewValue(row.quantity))}" inputmode="numeric"></td>
+              <td><input class="cut-preview-check" type="checkbox" data-field="edge_top" ${row.edge_top ? "checked" : ""}></td>
+              <td><input class="cut-preview-check" type="checkbox" data-field="edge_bottom" ${row.edge_bottom ? "checked" : ""}></td>
+              <td><input class="cut-preview-check" type="checkbox" data-field="edge_left" ${row.edge_left ? "checked" : ""}></td>
+              <td><input class="cut-preview-check" type="checkbox" data-field="edge_right" ${row.edge_right ? "checked" : ""}></td>
+              <td><input class="cut-preview-check" type="checkbox" data-field="work_milling" ${row.work_milling ? "checked" : ""}></td>
+              <td><input class="cut-preview-check" type="checkbox" data-field="work_drilling" ${row.work_drilling ? "checked" : ""}></td>
+              <td><input class="cut-preview-check" type="checkbox" data-field="work_lacquer" ${row.work_lacquer ? "checked" : ""}></td>
+              <td><input class="cut-preview-check" type="checkbox" data-field="work_other" ${row.work_other ? "checked" : ""}></td>
+              <td><select class="cut-preview-input cut-preview-select" data-field="element_type">${cutPreviewSelectOptions(CUT_ELEMENT_TYPES, row.element_type)}</select></td>
+              <td><select class="cut-preview-input cut-preview-select" data-field="technology">${cutPreviewSelectOptions(CUT_TECHNOLOGIES, row.technology)}</select></td>
+              <td><select class="cut-preview-input cut-preview-side" data-field="lacquer_sides">${cutPreviewSelectOptions(CUT_LACQUER_SIDES, row.lacquer_sides)}</select></td>
+              <td><input class="cut-preview-input cut-preview-name" data-field="tech_notes" value="${escapeHtml(row.tech_notes || "")}"></td>
+              <td><input class="cut-preview-input cut-preview-name" data-field="name" value="${escapeHtml([row.name, row.description].filter(Boolean).join(" | "))}"></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function cutPreviewValue(value) {
+  if (value === null || value === undefined || value === "") return "";
+  return String(value).replace(".", ",");
+}
+
+function cutPreviewNumber(value) {
+  const number = Number(String(value || "").trim().replace(",", "."));
+  return Number.isFinite(number) ? number : 0;
+}
+
+function getCutTextPreviewRows() {
+  if (!elements.cutTextPreview) return null;
+  const currentText = normalizeCutText(elements.cutTextImport?.value || "").trim();
+  const previewText = elements.cutTextPreview.dataset.sourceText || "";
+  if (currentText !== previewText) return null;
+  const tableRows = [...elements.cutTextPreview.querySelectorAll("[data-preview-row]")];
+  if (!tableRows.length) return null;
+
+  const rows = [];
+  let invalid = false;
+  for (const rowElement of tableRows) {
+    rowElement.classList.remove("preview-invalid-row");
+    if (!rowElement.querySelector('[data-field="include"]')?.checked) continue;
+
+    const length = cutPreviewNumber(rowElement.querySelector('[data-field="length"]')?.value);
+    const width = cutPreviewNumber(rowElement.querySelector('[data-field="width"]')?.value);
+    const quantity = cutPreviewNumber(rowElement.querySelector('[data-field="quantity"]')?.value);
+    const name = rowElement.querySelector('[data-field="name"]')?.value.trim() || "Nazwa";
+    const elementType = rowElement.querySelector('[data-field="element_type"]')?.value.trim() || "";
+    const technology = rowElement.querySelector('[data-field="technology"]')?.value.trim() || "";
+    const lacquerSides = rowElement.querySelector('[data-field="lacquer_sides"]')?.value.trim() || "";
+    const techNotes = rowElement.querySelector('[data-field="tech_notes"]')?.value.trim() || "";
+    if (length <= 0 || width <= 0 || quantity <= 0) {
+      rowElement.classList.add("preview-invalid-row");
+      invalid = true;
+      continue;
+    }
+
+    rows.push({
+      length,
+      width,
+      quantity,
+      name,
+      edge_top: Boolean(rowElement.querySelector('[data-field="edge_top"]')?.checked),
+      edge_bottom: Boolean(rowElement.querySelector('[data-field="edge_bottom"]')?.checked),
+      edge_left: Boolean(rowElement.querySelector('[data-field="edge_left"]')?.checked),
+      edge_right: Boolean(rowElement.querySelector('[data-field="edge_right"]')?.checked),
+      work_milling: Boolean(rowElement.querySelector('[data-field="work_milling"]')?.checked),
+      work_drilling: Boolean(rowElement.querySelector('[data-field="work_drilling"]')?.checked),
+      work_lacquer: Boolean(rowElement.querySelector('[data-field="work_lacquer"]')?.checked),
+      work_other: Boolean(rowElement.querySelector('[data-field="work_other"]')?.checked),
+      element_type: elementType,
+      technology,
+      lacquer_sides: lacquerSides,
+      tech_notes: techNotes,
+      description: [technology, lacquerSides, techNotes].filter(Boolean).join(" | ")
+    });
+  }
+
+  return { rows, invalid };
+}
+
+function cutTextPreviewWarning(row) {
+  const shortSide = Math.min(Number(row.length || 0), Number(row.width || 0));
+  return row.work_other || shortSide < 100 || Number(row.quantity || 0) > 20;
+}
+
+function normalizeCutText(text) {
+  return String(text || "")
+    .replace(/[×*]/g, "x")
+    .replace(/(.)(\b\d+(?:[,.]\d+)?\s*x\s*\d+(?:[,.]\d+)?\b)/gi, (match, previous, dimensions) => {
+      if (previous === "\n" || previous === "\r") return match;
+      return `${previous}\n${dimensions}`;
+    });
 }
 
 async function importCutPartsFromText() {
   if (!state.selectedCutJobId) {
-    if (!elements.globalCutOrderSelect?.value) {
+    if (!cutOrderField().value) {
       return showToast("Najpierw wybierz z listy zamówienie (lub zapisz pozycję)");
     }
     // Automatycznie zapisujemy pozycję!
@@ -2899,14 +5374,25 @@ async function importCutPartsFromText() {
     }
     const saved = await postJson("/api/cut-jobs", payload, "POST");
     state.selectedCutJobId = saved.id;
-    showToast("Pozycja zostaÄąâ€ša automatycznie zapisana.");
+    showToast("Pozycja została automatycznie zapisana.");
   }
 
   const text = elements.cutTextImport.value || "";
-  const rows = parseCutTextRows(text);
+  const preview = getCutTextPreviewRows();
+  const rows = preview ? preview.rows : parseCutTextRows(text);
+  if (preview?.invalid) {
+    elements.cutTextImportStatus.textContent = "Popraw czerwone wiersze w podglądzie";
+    return showToast("Popraw wymiary albo ilość w podglądzie");
+  }
   if (!rows.length) {
-    elements.cutTextImportStatus.textContent = "Nie znaleziono formatek w tekscie";
-    return showToast("Wklej linie typu: 240 x 450 sztuk 1 frez");
+    elements.cutTextImportStatus.textContent = preview
+      ? "Zaznacz przynajmniej jedną formatkę do importu"
+      : "Nie znaleziono formatek w tekście";
+    return showToast(preview ? "Zaznacz formatki do dodania" : "Wklej linie typu: 240 x 450 sztuk 1 frez");
+  }
+  const duplicateCount = countDuplicateCutPreviewRows(rows);
+  if (duplicateCount && !confirm(`Znaleziono ${duplicateCount} podobnych formatek już zapisanych w tej pozycji. Dodać mimo to?`)) {
+    return showToast("Dodawanie anulowane");
   }
 
   const basePayload = buildCutTextBasePayload();
@@ -2916,10 +5402,25 @@ async function importCutPartsFromText() {
 
   prepareNextCutPartRow(basePayload.material_id);
   elements.cutTextImport.value = "";
+  renderCutTextPreview([], "");
   await loadCutParts(state.selectedCutJobId);
   await refreshCutting();
   elements.cutTextImportStatus.textContent = `Dodano ${rows.length} formatek z tekstu`;
   showToast(`Dodano ${rows.length} formatek z tekstu`);
+}
+
+function countDuplicateCutPreviewRows(rows) {
+  const existing = new Set(state.cutParts.map(cutPartDuplicateKey));
+  return rows.filter((row) => existing.has(cutPartDuplicateKey(row))).length;
+}
+
+function cutPartDuplicateKey(row) {
+  return [
+    Number(row.length || 0),
+    Number(row.width || 0),
+    Number(row.quantity || 0),
+    String(row.name || "").trim().toLowerCase()
+  ].join("|");
 }
 
 function buildCutTextBasePayload() {
@@ -2935,6 +5436,106 @@ function buildCutTextBasePayload() {
 }
 
 
+
+function parseCutTextLineSmart(line, baseName, isLacqueredFront, defaultMilling = false) {
+  const normalizedLine = String(line || "")
+    .replace(/[×*]/g, "x")
+    .replace(/\b[zż]t\b/gi, "szt")
+    .replace(/\bsz[łl]uk\b/gi, "sztuk")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^[^\d]+/, "");
+  const match = normalizedLine.match(/^\s*(\d+(?:[,.]\d+)?)\s*x\s*(\d+(?:[,.]\d+)?)(.*)$/i);
+  if (!match) return null;
+  const length = parseImportedNumber(match[1]);
+  const width = parseImportedNumber(match[2]);
+  let tail = cleanCutTextTail(match[3]);
+  let quantity = 1;
+  const quantityMatch = tail.match(/(?:^|[\s\-–—(])(\d+(?:[,.]\d+)?)\s*(?:sztuk|szt\.?|szt|pcs)\b/i)
+    || tail.match(/(?:^|[\s\-–—(])(?:sztuk|szt\.?|szt|pcs)\s*(\d+(?:[,.]\d+)?)\b/i);
+  if (quantityMatch) {
+    quantity = parseImportedNumber(quantityMatch[1]);
+    tail = cleanCutTextTail(tail.replace(quantityMatch[0], " "));
+  } else {
+    const looseQuantity = tail.match(/^[\s\-–—(]*(\d+(?:[,.]\d+)?)(?:[)\s\-–—]+|$)(.*)$/);
+    if (looseQuantity && !/\b(?:mm|cm|mb|m2|m²)\b/i.test(looseQuantity[2])) {
+      quantity = parseImportedNumber(looseQuantity[1]);
+      tail = cleanCutTextTail(looseQuantity[2]);
+    }
+  }
+  tail = cleanCutTextTail(tail.replace(/\b(?:sztuk|szt\.?|szt|pcs)\b/gi, " "));
+  if (!length || !width || !quantity) return null;
+
+  const oklDMatch = tail.match(/oklD:(\d)/i);
+  const oklSMatch = tail.match(/oklS:(\d)/i);
+  const oklD = oklDMatch ? parseInt(oklDMatch[1], 10) : 0;
+  const oklS = oklSMatch ? parseInt(oklSMatch[1], 10) : 0;
+  tail = tail.replace(/okl[DS]:\d/gi, "").trim();
+  const cleanName = cleanCutTextTail(tail.replace(/\b(frez|frezowanie|freza|wierc(?:enie)?|otwor(?:y)?|otw[oó]r|lakier|skos|trapez|tr[oó]jk[aą]t|cnc|nietypowe?)\b/gi, " "));
+  const sourceText = `${tail} ${baseName}`.toLowerCase();
+  const hasLacquer = isLacqueredFront || /\b(lakier|front)\b/i.test(sourceText);
+  const hasMilling = defaultMilling || /\b(frez|frezowanie|freza)\b/i.test(tail);
+  const hasOther = /\b(skos|trapez|tr[oó]jk[aą]t|cnc|nietyp)\b/i.test(tail);
+  const template = inferCutTechnologyTemplate(sourceText, { hasLacquer, hasMilling });
+  const description = [tail, baseName].filter(Boolean).join(" | ");
+  return applyTechnologyTemplateToValues({
+    length,
+    width,
+    quantity,
+    name: baseName || cleanName || tail || "",
+    description,
+    work_milling: hasMilling,
+    work_drilling: /\b(wierc|otwor|otw[oó]r)\b/i.test(tail),
+    work_lacquer: hasLacquer,
+    work_other: hasOther,
+    edge_top: oklD >= 1,
+    edge_bottom: oklD >= 2,
+    edge_left: oklS >= 1,
+    edge_right: oklS >= 2,
+    element_type: "",
+    technology: "",
+    lacquer_sides: hasLacquer ? "1 strona" : "",
+    tech_notes: hasOther ? "Sprawdzić skos / element specjalny" : ""
+  }, template);
+}
+
+function inferCutTechnologyTemplate(text, flags = {}) {
+  const value = String(text || "").toLowerCase();
+  const plain = value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[łŁ]/g, "l");
+  if (plain.includes("bez lakieru") || plain.includes("tylko rozkroj") || plain.includes("rozkroj tylko") || plain.includes("rozkroj")) {
+    return findCutTechnologyTemplate("bez_technologii");
+  }
+  if (plain.includes("2 strony") || plain.includes("dwustronnie") || plain.includes("obustronnie")) {
+    return findCutTechnologyTemplate("front_gladki_lakier_2_strony");
+  }
+  if (plain.includes("fornir") && flags.hasMilling) return findCutTechnologyTemplate("front_fornirowany_frezowany");
+  if (plain.includes("fornir")) return findCutTechnologyTemplate("front_fornirowany_gladki");
+  if (plain.includes("ramka") || plain.includes("ramkowy") || plain.includes("ramiak")) {
+    return findCutTechnologyTemplate("front_ramkowy_lakierowany");
+  }
+  if (/\b(ryfel|ryflow|lamel)/i.test(value)) return findCutTechnologyTemplate("front_ryflowany_lamele");
+  if (plain.includes("blenda")) return findCutTechnologyTemplate("blenda_lakierowana");
+  if (plain.includes("listwa")) return findCutTechnologyTemplate("listwa_lakierowana");
+  if (plain.includes("cokol")) return findCutTechnologyTemplate("cokol_lakierowany");
+  if (plain.includes("zaklad") || plain.includes("zakład")) return findCutTechnologyTemplate("bok_dokladany_z_zakladka");
+  if (/\bbok\b/i.test(value)) return findCutTechnologyTemplate("bok_dokladany");
+  if (flags.hasMilling && flags.hasLacquer) return findCutTechnologyTemplate("front_frezowany_lakier");
+  if (flags.hasLacquer) return findCutTechnologyTemplate("front_gladki_lakier");
+  return null;
+}
+
+function cleanCutTextTail(value) {
+  return String(value || "")
+    .replace(/^[\s:;,\-–—()]+/, "")
+    .replace(/[\s:;,]+$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseImportedNumber(value) {
+  const number = Number(String(value || "").replace(",", "."));
+  return Number.isFinite(number) ? number : 0;
+}
 
 function formPayload(form) {
   const data = new FormData(form);
@@ -2975,8 +5576,10 @@ async function fetchJson(url, options = {}) {
 async function setSelectedPaymentStatus(status) {
   if (!state.selectedOrderId) return showToast("Najpierw kliknij zamówienie");
   await postJson(`/api/orders/${state.selectedOrderId}/payment-status`, { payment_status: status });
-  await prepareNotification(state.selectedOrderId);
   await refreshCrm();
+  const selected = state.orders.find((order) => Number(order.id) === Number(state.selectedOrderId));
+  if (selected) fillOrderForm(Number(selected.id));
+  await prepareNotification(state.selectedOrderId);
   showToast(`Status płatności: ${status}`);
 }
 
@@ -2991,7 +5594,7 @@ async function showRemainderLogs() {
   const logs = await fetchJson("/api/integration/remainder-logs");
   elements.remainderLogs.textContent = logs.length
     ? logs.map((log) => `${log.created_at} ${log.event_type} ${log.result_json}\n${log.body}`).join("\n\n")
-    : "Brak ÄąÄ˝Ă„â€¦daÄąâ€ž z GibLab do naszej aplikacji. To znaczy, ÄąÄ˝e GibLab nie wysÄąâ€šaÄąâ€š danych na http://localhost:3080/giblab/remainders.";
+    : "Brak żądań z GibLab do naszej aplikacji. To znaczy, że GibLab nie wysłał danych na http://localhost:3080/giblab/remainders.";
 }
 
 async function copyRemaindersUrl() {
@@ -3037,7 +5640,7 @@ function paymentStatusClass(status) {
   if (normalized.includes("po terminie")) return "payment-overdue";
   if (normalized.includes("zaliczka")) return "payment-deposit";
   if (normalized.includes("oplacone") || normalized.includes("opłacone")) return "payment-paid";
-  if (normalized.includes("nie zaplacone") || normalized.includes("nie zapÄąâ€šacone")) return "payment-unpaid";
+  if (normalized.includes("nie zaplacone") || normalized.includes("nie zapłacone")) return "payment-unpaid";
   return "";
 }
 
@@ -3110,44 +5713,38 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 }
+function printReceipt() {
+  if (!state.selectedOrderId) return showToast("Najpierw kliknij zamowienie");
 
-// CNC Reports Logic
-const elsCnc = {
-  refreshCncReportsBtn: document.getElementById('refreshCncReportsBtn'),
-  cncReportsBody: document.getElementById('cncReportsBody')
-};
+  const order = state.orders.find((item) => Number(item.id) === Number(state.selectedOrderId));
+  if (!order) return;
 
-async function loadCncReports() {
-  if (!elsCnc.cncReportsBody) return;
-  const reports = await fetchJson('/api/cnc/reports');
-  elsCnc.cncReportsBody.innerHTML = reports.map(r => `
-    <tr>
-      <td>${escapeHtml(r.created_at || '')}</td>
-      <td>${escapeHtml(r.worker_name || '')}</td>
-      <td>${escapeHtml(r.job_name || 'ID: ' + r.cut_job_id)}</td>
-      <td>${escapeHtml(r.error_type || '')}</td>
-      <td>${escapeHtml(r.description || '')}</td>
-    </tr>
-  `).join('');
-}
+  const client = state.clients.find((item) => Number(item.id) === Number(order.client_id));
+  const total = Number(order.value || 0);
+  const paid = Number(order.paid || 0);
+  const balance = total - paid;
+  const html = [
+    "<!DOCTYPE html>",
+    "<html><head><meta charset=\"utf-8\"><title>Potwierdzenie</title>",
+    "<style>body{font-family:Arial,sans-serif;font-size:14px;margin:0;padding:10px;width:80mm}.title{font-weight:bold;text-align:center;font-size:16px;margin-bottom:10px}.row{display:flex;justify-content:space-between;margin-bottom:5px}.divider{border-bottom:1px dashed #000;margin:10px 0}.total{font-weight:bold;font-size:16px}@media print{body{width:80mm;padding:0;margin:0}}</style>",
+    "</head><body>",
+    "<div class=\"title\">POTWIERDZENIE</div>",
+    "<div class=\"row\"><span>Zamowienie:</span><span>" + escapeHtml(order.number || "") + "</span></div>",
+    "<div class=\"row\"><span>Klient:</span><span>" + escapeHtml((client && client.name) || "") + "</span></div>",
+    "<div class=\"row\"><span>Data:</span><span>" + escapeHtml(new Date().toLocaleDateString("pl-PL")) + "</span></div>",
+    "<div class=\"divider\"></div>",
+    "<div class=\"row\"><span>Kwota:</span><span>" + formatMoney(total) + "</span></div>",
+    "<div class=\"row\"><span>Wplacono:</span><span>" + formatMoney(paid) + "</span></div>",
+    "<div class=\"divider\"></div>",
+    "<div class=\"row total\"><span>Pozostalo:</span><span>" + formatMoney(balance) + "</span></div>",
+    "</body></html>"
+  ].join("");
 
-if (elsCnc.refreshCncReportsBtn) {
-  elsCnc.refreshCncReportsBtn.addEventListener('click', loadCncReports);
-}
+  const printWindow = window.open("", "_blank", "width=350,height=500");
+  if (!printWindow) return showToast("Przegladarka zablokowala okno wydruku");
 
-document.querySelectorAll('.tab').forEach(button => {
-  button.addEventListener('click', () => {
-    if (button.dataset.tab === 'cnc_reports') {
-      loadCncReports();
-    }
-  });
-});
-
-
-function renderCutOrderSelect() {
-  const select = elements.globalCutOrderSelect;
-  if (!select) return;
-  const currentValue = select.value || (state.selectedOrderId ? String(state.selectedOrderId) : "");
-  select.innerHTML = '<option value="">Wybierz zamówienie</option>' + state.orders.map((order) => `<option value="${order.id}">${order.order_number} - ${order.customer_name} - ${order.title}</option>`).join('');
-  select.value = currentValue;
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.onload = () => printWindow.print();
 }

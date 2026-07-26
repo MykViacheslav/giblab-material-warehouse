@@ -1011,11 +1011,20 @@ app.put("/api/orders/:id", (request, response) => {
 
 app.post("/api/orders/:id/payment-status", (request, response) => {
   const id = Number(request.params.id);
-  if (!selectOrder.get(id)) return response.status(404).json({ error: "Order not found" });
+  const order = selectOrder.get(id);
+  if (!order) return response.status(404).json({ error: "Order not found" });
   const status = normalizePaymentStatus(request.body.payment_status || "Nie zapłacone");
   if (!["Nie zapłacone", "Zaliczka", "Opłacone", "Po terminie"].includes(status)) {
     return response.status(400).json({ error: "Invalid payment status" });
   }
+
+  if (status === "Opłacone" && order.balance > 0) {
+    db.prepare(`
+      INSERT INTO payments (order_id, amount, payment_date, method, payer_name, received_by, note)
+      VALUES (?, ?, CURRENT_DATE, ?, ?, ?, ?)
+    `).run(id, order.balance, "Przelew", order.customer_name || "Klient", "System", "Rozliczenie automatyczne");
+  }
+
   db.prepare("UPDATE orders SET payment_status = ?, payment_status_manual = 1 WHERE id = ?").run(status, id);
   response.json(selectOrder.get(id));
 });
