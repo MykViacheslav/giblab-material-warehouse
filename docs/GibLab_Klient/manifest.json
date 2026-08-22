@@ -1,0 +1,16 @@
+{
+  "project": "GibLab Klient",
+  "created": "2026-08-22",
+  "working_names": [
+    "GibLab Klient",
+    "Klient + GibLab",
+    "Magazyn GibLab Klient"
+  ],
+  "key_decisions": [
+    "resztki segregowane po typie materiału i rozmiarze",
+    "lokalizacja/półka dla każdej resztki",
+    "mała drukarka termiczna etykiet",
+    "Telegram jako kanał przyjmowania zleceń",
+    "AI z obowiązkowym podglądem przed wysłaniem do GibLab"
+  ]
+}
