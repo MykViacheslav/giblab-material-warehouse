@@ -15,7 +15,7 @@ function Test-WarehouseServer {
 }
 
 if (-not (Test-WarehouseServer)) {
-  Start-Process -FilePath "node" -ArgumentList "server.js" -WorkingDirectory $AppDir -WindowStyle Hidden
+  Start-Process -FilePath "node" -ArgumentList "--use-system-ca", "server.js" -WorkingDirectory $AppDir -WindowStyle Hidden
   for ($i = 0; $i -lt 30; $i++) {
     Start-Sleep -Milliseconds 500
     if (Test-WarehouseServer) { break }

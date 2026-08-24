@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js",
-    "test": "node --test",
+    "start": "node --use-system-ca server.js",
+    "dev": "node --use-system-ca --watch server.js",
+    "test": "node --test \"test/*.test.js\"",
     "app": "powershell -NoProfile -ExecutionPolicy Bypass -File ./start-warehouse.ps1"
   },
   "dependencies": {

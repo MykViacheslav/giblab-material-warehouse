@@ -1,6 +1,9 @@
 import { normalizeMaterialCatalogFields } from "./materialCatalog.js";
 
 export const MATERIAL_IMPORT_FIELDS = [
+  "id",
+  "paren_id",
+  "isfolder",
   "code",
   "name",
   "producer",
@@ -23,6 +26,14 @@ export const MATERIAL_IMPORT_MODES = new Set(["add_new", "update_existing", "ups
 export const MATERIAL_IMPORT_FILTERS = new Set(["all", "valid", "invalid", "new", "existing", "duplicate", "warning", "selected"]);
 
 const HEADER_ALIASES = new Map([
+  ["id", "id"],
+  ["paren id", "paren_id"],
+  ["parent id", "paren_id"],
+  ["parent_id", "paren_id"],
+  ["rodzic id", "paren_id"],
+  ["isfolder", "isfolder"],
+  ["is folder", "isfolder"],
+  ["folder", "isfolder"],
   ["code", "code"],
   ["kod", "code"],
   ["symbol", "code"],
@@ -93,7 +104,7 @@ const HEADER_ALIASES = new Map([
   ["active", "is_active"]
 ]);
 
-const NUMERIC_FIELDS = new Set(["price", "thickness", "length", "width", "min_stock"]);
+const NUMERIC_FIELDS = new Set(["id", "paren_id", "price", "thickness", "length", "width", "min_stock"]);
 const NON_NEGATIVE_FIELDS = new Set(["price", "thickness", "length", "width", "min_stock"]);
 const ACTIVE_TRUE = new Set(["1", "true", "tak", "yes", "active", "aktywny"]);
 const ACTIVE_FALSE = new Set(["0", "false", "nie", "no", "inactive", "nieaktywny"]);
@@ -150,11 +161,11 @@ export function commitMaterialImport(db, rows, mode = "upsert", options = {}) {
       id, paren_id, isfolder, code, name, unit, price, thickness, length, width,
       producer, decor_code, decor_name, structure, material_type, supplier, location, min_stock, is_active, sort_order
     )
-    VALUES (?, NULL, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const update = db.prepare(`
     UPDATE materials
-    SET code = ?, name = ?, unit = ?, price = ?, thickness = ?, length = ?, width = ?,
+    SET paren_id = ?, isfolder = ?, code = ?, name = ?, unit = ?, price = ?, thickness = ?, length = ?, width = ?,
         producer = ?, decor_code = ?, decor_name = ?, structure = ?, material_type = ?,
         supplier = ?, location = ?, min_stock = ?, is_active = ?
     WHERE id = ?
@@ -177,8 +188,8 @@ export function commitMaterialImport(db, rows, mode = "upsert", options = {}) {
         skipped += 1;
         continue;
       }
-      const existingId = row.existing_id || findExistingMaterialId(db, row.material);
-      const isExisting = Boolean(existingId);
+      const existingId = row.existing_id ?? findExistingMaterialId(db, row.material);
+      const isExisting = existingId !== null && existingId !== undefined;
       if ((mode === "add_new" || mode === "skip_duplicates") && isExisting) {
         skipped += 1;
         continue;
@@ -191,7 +202,7 @@ export function commitMaterialImport(db, rows, mode = "upsert", options = {}) {
         update.run(...materialUpdateValues(row.material), existingId);
         updated += 1;
       } else {
-        const id = nextMaterialId(db);
+        const id = row.material.id ?? nextMaterialId(db);
         insert.run(id, ...materialInsertValues(row.material), id);
         added += 1;
       }
@@ -237,6 +248,8 @@ export function normalizeImportRow(rawRow = {}, rowNumber = 1) {
       }
     } else if (field === "is_active") {
       material[field] = parseActiveValue(mapped[field]);
+    } else if (field === "isfolder") {
+      material[field] = parseFolderValue(mapped[field]);
     } else {
       material[field] = textValue(mapped[field]);
     }
@@ -248,7 +261,7 @@ export function normalizeImportRow(rawRow = {}, rowNumber = 1) {
   if (!material.unit) material.unit = "";
   if (!material.name && material.decor_name) material.name = material.decor_name;
 
-  if (!material.code && !material.decor_code) errors.push("code or decor_code is required.");
+  if (!material.isfolder && !material.code && !material.decor_code) errors.push("code or decor_code is required.");
   if (!material.name && !material.decor_name) errors.push("name or decor_name is required.");
   for (const field of NON_NEGATIVE_FIELDS) {
     if (material[field] !== null && material[field] < 0) errors.push(`${field} cannot be negative.`);
@@ -315,6 +328,13 @@ export function fieldForHeader(header) {
 }
 
 export function materialDuplicateKey(material) {
+  if (material.id !== null && material.id !== undefined) {
+    return { type: "id", value: `id:${material.id}` };
+  }
+  return materialNaturalDuplicateKey(material);
+}
+
+function materialNaturalDuplicateKey(material) {
   const producer = normalizeKeyPart(material.producer);
   const decorCode = normalizeKeyPart(material.decor_code);
   const structure = normalizeKeyPart(material.structure);
@@ -330,13 +350,22 @@ export function materialDuplicateKey(material) {
 export function buildExistingKeyIndex(existingMaterials = []) {
   const keys = new Map();
   for (const material of existingMaterials) {
-    const key = materialDuplicateKey(material);
-    if (key && !keys.has(key.value)) keys.set(key.value, material);
+    const idKey = material.id !== null && material.id !== undefined
+      ? { value: `id:${material.id}` }
+      : null;
+    const naturalKey = materialNaturalDuplicateKey(material);
+    for (const key of [idKey, naturalKey]) {
+      if (key && !keys.has(key.value)) keys.set(key.value, material);
+    }
   }
   return keys;
 }
 
 function findExistingMaterialId(db, material) {
+  if (material.id !== null && material.id !== undefined) {
+    const row = db.prepare("SELECT id FROM materials WHERE id = ? LIMIT 1").get(material.id);
+    return row?.id ?? null;
+  }
   const key = materialDuplicateKey(material);
   if (!key) return null;
   if (key.type === "decor") {
@@ -361,6 +390,8 @@ function nextMaterialId(db) {
 
 function materialInsertValues(material) {
   return [
+    material.paren_id,
+    material.isfolder ? 1 : 0,
     material.code,
     material.name || material.decor_name || material.code || material.decor_code,
     material.unit,
@@ -411,6 +442,12 @@ function parseActiveValue(value) {
   if (ACTIVE_TRUE.has(normalized)) return 1;
   if (ACTIVE_FALSE.has(normalized)) return 0;
   return 1;
+}
+
+function parseFolderValue(value) {
+  if (value === "" || value === null || value === undefined) return 0;
+  const normalized = normalizeKeyPart(value);
+  return ACTIVE_TRUE.has(normalized) ? 1 : 0;
 }
 
 function normalizeHeader(value) {

@@ -10,7 +10,7 @@ cd /d "%APPDIR%"
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri '%HEALTH%' -UseBasicParsing -TimeoutSec 2 | Out-Null; exit 0 } catch { exit 1 }"
 if errorlevel 1 (
-  start "Magazyn GibLab server" /min node server.js
+  start "Magazyn GibLab server" /min node --use-system-ca server.js
   powershell -NoProfile -Command "Start-Sleep -Seconds 4"
 )
 

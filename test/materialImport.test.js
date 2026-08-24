@@ -47,6 +47,28 @@ test("map English headers to internal fields", () => {
   assert.equal(row.material.structure, "ST9");
 });
 
+test("GibLab goods rows preserve folder hierarchy", () => {
+  const preview = previewMaterialImport([
+    { id: 0, paren_id: "", isfolder: 1, name: "Materiał płytowy" },
+    { id: 1, paren_id: 0, isfolder: 1, name: "Kronospan" },
+    { id: 1001, paren_id: 1, isfolder: 0, code: "KS-A", name: "Płyta A", unit: "m2" }
+  ]);
+  assert.equal(preview.summary.valid, 3);
+  assert.equal(preview.summary.invalid, 0);
+
+  const db = createImportDb();
+  const result = commitMaterialImport(db, preview.rows, "upsert");
+  assert.equal(result.added, 3);
+  assert.deepEqual(
+    db.prepare("SELECT id, paren_id, isfolder, name FROM materials ORDER BY id").all().map((row) => ({ ...row })),
+    [
+      { id: 0, paren_id: null, isfolder: 1, name: "Materiał płytowy" },
+      { id: 1, paren_id: 0, isfolder: 1, name: "Kronospan" },
+      { id: 1001, paren_id: 1, isfolder: 0, name: "Płyta A" }
+    ]
+  );
+});
+
 test("default is_active = 1", () => {
   const row = normalizeImportRow({ code: "A", name: "A" });
   assert.equal(row.material.is_active, 1);

@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="pl">
   <head>
     <meta charset="utf-8">
@@ -13,36 +13,40 @@
           <h1>Magazyn GibLab</h1>
         </div>
         <div class="nav-menu">
-          <button class="tab" data-tab="dashboard">Dashboard</button>
+          <button class="tab active" data-tab="dashboard">Dashboard</button>
           <button class="tab" data-tab="customers">Klienci</button>
           <button class="tab" data-tab="orders">Zamówienia</button>
           <button class="tab" data-tab="calendar">Kalendarz</button>
           <button class="tab" data-tab="pricing">Wycena</button>
+          <button class="tab" data-tab="technologyPricing">Cennik technologii</button>
           <button class="tab" data-tab="cutting">Formatki</button>
-          <button class="tab active" data-tab="materials">Materiały</button>
+          <button class="tab" data-tab="production">Produkcja</button>
+          <button class="tab" data-tab="productionCosts">Analiza produkcji</button>
+          <button class="tab" data-tab="materials">Materiały</button>
           <button class="tab" data-tab="stock">Stany</button>
           <button class="tab" data-tab="deliveries">Dostawy</button>
           <button class="tab" data-tab="purchase">Zakupy</button>
           <button class="tab" data-tab="offcuts">Resztki</button>
+          <button class="tab" data-tab="manual">Instrukcja</button>
           <button class="tab" data-tab="backup">Backup</button>
           <button class="tab" data-tab="project">Import .project</button>
         </div>
-      </aside>
-
-      <div class="main-wrapper">
-        <header class="topbar">
-          <div class="topbar-right actions">
-            <button id="importDefaultBtn" class="secondary">Import GibLab</button>
-            <button id="polishCatalogBtn" class="secondary">Spolszcz</button>
+        <details class="giblab-tools">
+          <summary>Narzędzia GibLab</summary>
+          <div class="giblab-tools-panel">
+            <button id="importDefaultBtn" class="secondary">Import katalogu</button>
+            <button id="polishCatalogBtn" class="secondary">Spolszcz katalog</button>
             <label class="file-button secondary">
               Plik XLS
               <input id="goodsFile" type="file" accept=".xls,.xlsx">
             </label>
-            <button id="exportBtn" class="secondary">Test Eksport</button>
-            <button id="exportGiblabBtn" class="secondary">Zapisz do GibLab</button>
+            <button id="exportBtn" class="secondary">Test eksportu</button>
+            <button id="exportGiblabBtn" class="secondary">Zapisz goods.xls</button>
           </div>
-        </header>
+        </details>
+      </aside>
 
+      <div class="main-wrapper">
         <main class="layout">
       <button id="showTreeBtn" class="show-tree-btn" type="button" title="Pokaż kategorie">Kategorie</button>
       <aside class="panel tree-panel">
@@ -54,7 +58,7 @@
       </aside>
 
       <section class="panel content-panel">
-        <section id="dashboardTab" class="tab-page">
+        <section id="dashboardTab" class="tab-page active">
           <div id="dashboardCards" class="dashboard-grid"></div>
           <div class="dashboard-columns">
             <div class="dashboard-panel" data-dashboard-panel="today">
@@ -167,80 +171,88 @@
         </section>
 
         <section id="ordersTab" class="tab-page">
-          <div class="split-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
-            <div class="order-form-panel" style="border: 1px solid var(--border-color); padding: 15px; border-radius: 8px; background: var(--panel-bg);">
-              <h3 style="margin-top: 0; color: var(--accent-color);">Dane zamówienia</h3>
-              <form id="orderForm" class="grid-form order-grid">
-              <input name="order_number" placeholder="Numer automatyczny" readonly title="Numer zamówienia dodaje się automatycznie">
-              <select name="customer_id" required></select>
-              <input name="title" placeholder="Nazwa zamówienia" required>
-              <input name="project_path" placeholder="Plik .project">
-              <input name="order_date" type="date">
-              <input name="due_date" type="date">
-              <select name="production_status">
-                <option>Nowe</option>
-                <option>Pomiar</option>
-                <option>Projekt</option>
-                <option>Do produkcji</option>
-                <option>W produkcji</option>
-                <option>Gotowe</option>
-                <option>Zamontowane</option>
-                <option>Zamknięte</option>
-              </select>
-              <select name="payment_status">
-                <option>Nie zapłacone</option>
-                <option>Zaliczka</option>
-                <option>Opłacone</option>
-                <option>Po terminie</option>
-              </select>
-              <label class="check"><input name="payment_status_manual" type="checkbox"> Status ręczny</label>
-              <input name="total_amount" placeholder="Wartość">
-              <input name="notes" placeholder="Uwagi">
-              <button type="submit">Zapisz zamówienie</button>
-              <button id="clearOrderBtn" type="button">Wyczyść</button>
-            </form>
-            </div>
-            
-            <div class="payment-form-panel" style="border: 1px solid var(--border-color); padding: 15px; border-radius: 8px; background: var(--panel-bg);">
-              <h3 style="margin-top: 0; color: var(--accent-color);">Wpłaty i rozliczenia</h3>
-              <form id="paymentForm" class="stock-form">
-              <input name="order_id" placeholder="ID zamówienia" required>
-              <input name="amount" placeholder="Kwota wpłaty" required>
-              <input name="payment_date" type="date">
-              <select name="method">
-                <option value="">Metoda</option>
-                <option>Gotówka</option>
-                <option>Przelew</option>
-                <option>Karta</option>
-                <option>BLIK</option>
-              </select>
-              <select id="payerCustomerSelect" name="payer_customer_id">
-                <option value="">Wybierz płacącego</option>
-              </select>
-              <input name="payer_name" placeholder="Kto zapłacił">
-              <input name="received_by" placeholder="Kto przyjął">
-              <input name="note" placeholder="Opis wpłaty">
-              <button type="submit">Dodaj wpłatę</button>
-            </form>
-            </div>
+          <div class="orders-workspace hidden">
+            <section class="compact-panel">
+              <h3>Dane zamówienia</h3>
+              <form id="orderForm" class="orders-form-grid">
+                <input name="order_number" placeholder="Numer automatyczny" readonly title="Numer zamówienia dodaje się automatycznie">
+                <select name="customer_id" required></select>
+                <input name="title" placeholder="Nazwa zamówienia" required>
+                <input name="project_path" placeholder="Plik .project">
+                <input name="order_date" type="date">
+                <input name="due_date" type="date">
+                <select name="production_status">
+                  <option>Nowe</option>
+                  <option>Pomiar</option>
+                  <option>Projekt</option>
+                  <option>Do produkcji</option>
+                  <option>W produkcji</option>
+                  <option>Gotowe</option>
+                  <option>Zamontowane</option>
+                  <option>Zamknięte</option>
+                </select>
+                <input name="total_amount" placeholder="Wartość" readonly>
+                <label class="orders-field-label">
+                  <span>Dopłata pilna %</span>
+                  <input name="rush_percentage" inputmode="decimal" placeholder="np. 10">
+                </label>
+                <input name="notes" placeholder="Uwagi">
+                <div class="orders-form-actions">
+                  <button type="submit">Zapisz zamówienie</button>
+                  <button id="clearOrderBtn" type="button">Wyczyść</button>
+                </div>
+              </form>
+            </section>
+
+            <section class="compact-panel">
+              <h3>Wpłaty i rozliczenia</h3>
+              <form id="paymentForm" class="orders-form-grid">
+                <input name="order_id" placeholder="ID zamówienia" required>
+                <input name="amount" placeholder="Kwota wpłaty" required>
+                <input name="payment_date" type="date">
+                <select name="method">
+                  <option value="">Metoda</option>
+                  <option>Gotówka</option>
+                  <option>Przelew</option>
+                  <option>Karta</option>
+                  <option>BLIK</option>
+                </select>
+                <select id="payerCustomerSelect" name="payer_customer_id">
+                  <option value="">Wybierz płacącego</option>
+                </select>
+                <input name="payer_name" placeholder="Kto zapłacił">
+                <input name="received_by" placeholder="Kto przyjął">
+                <input name="note" placeholder="Opis wpłaty">
+                <select form="orderForm" name="payment_status">
+                  <option>Nie zapłacone</option>
+                  <option>Zaliczka</option>
+                  <option>Opłacone</option>
+                  <option>Po terminie</option>
+                </select>
+                <label class="check"><input form="orderForm" name="payment_status_manual" type="checkbox"> Status ręczny</label>
+                <div class="orders-form-actions">
+                  <button type="submit">Dodaj wpłatę</button>
+                </div>
+              </form>
+            </section>
           </div>
-          
+
           <div class="notify-panel">
-            <button id="markPaidBtn" type="button">Oznacz opłacone</button>
-            <button id="markUnpaidBtn" type="button">Oznacz nie zapłacone</button>
             <button id="notifySmsBtn" type="button">SMS</button>
             <button id="notifyWhatsappBtn" type="button">WhatsApp</button>
             <button id="notifyTelegramBtn" type="button">Telegram</button>
             <button id="notifyEmailBtn" type="button">Email</button>
-            <button id="newOrderBtn" type="button">Nowe zamówienie</button>
-            <button id="addOrderPositionBtn" type="button">Dodaj pozycję</button>
             <button id="goToOrderCuttingBtn" type="button">Przejdź do zamówienia</button>
+            <button id="printReceiptBtn" type="button" style="color: #4ade80; border-color: #22c55e;">Wydrukuj potwierdzenie</button>
             <textarea id="notifyText" readonly placeholder="Kliknij zamówienie, aby przygotować wiadomość do klienta."></textarea>
           </div>
 
           <div class="selection-actions">
+            <button id="showNewOrderFormBtn" class="outline-action" type="button" style="background-color: #0c4a6e; border-color: #0ea5e9; color: white;">+ DODAJ NOWE ZAMÓWIENIE</button>
             <button id="editSelectedOrderBtn" class="outline-action" type="button">EDYTUJ</button>
             <button id="deleteSelectedOrderBtn" class="outline-action danger-outline" type="button">USUŃ</button>
+            <button id="markPaidBtn" class="outline-action payment-paid-action" type="button">OZNACZ OPŁACONE</button>
+            <button id="markUnpaidBtn" class="outline-action payment-unpaid-action" type="button">OZNACZ NIE ZAPŁACONE</button>
           </div>
 
           <div class="table-wrap">
@@ -359,62 +371,127 @@
           </div>
         </section>
 
-        <section id="cuttingTab" class="tab-page">
-          <div class="toolbar-row">
-            <label class="file-button">
-              Import formatek Excel
-              <input id="cutExcelFile" type="file" accept=".xls,.xlsx,.csv">
-            </label>
-            <button id="exportCutExcelBtn" type="button">Wyślij do GibLab (.project)</button>
-            <button id="importExportedProjectBtn" type="button">Odbierz wynik .project</button>
-            <input id="cutProjectFile" type="file" accept=".project,.xml" hidden>
-            <button id="quoteCutJobBtn" type="button">Wyceń formatki</button>
-            <button id="cutTextImportToggleBtn" type="button">Import tekst / zdjęcie</button>
-            <span id="cutStatus" class="hint"></span>
-          </div>
-
-          <form id="cutJobForm" class="grid-form order-grid" style="margin-bottom: 15px;">
-              <select name="order_id" style="display:none;"></select>
-              <input name="name" placeholder="Nazwa pozycji, np. Pozycja 1" required>
-              
-              <select name="operation_type" title="Typ operacji">
-                 <option value="O">(O) Inne działania</option>
-                 <option value="CS">(CS) Rozkrój płytowy</option>
-                 <option value="CN" selected>(CN) Nesting</option>
-                 <option value="CL">(CL) Rozkrój profili</option>
-                 <option value="EL">(EL) Oklejanie</option>
-                 <option value="SP">(SP) Obróbka pow.</option>
-                 <option value="GR">(GR) Rowkowanie</option>
-                 <option value="XNC">(XNC) Obróbka</option>
-                 <option value="LB">(LB) Etykiety</option>
+        <section id="technologyPricingTab" class="tab-page">
+          <h2>Cennik technologii formatek</h2>
+          <section class="compact-panel technology-price-editor">
+            <h3>Dodaj lub edytuj pozycję cennika</h3>
+            <form id="cutTechnologyPriceForm" class="stock-form quote-form technology-price-form">
+              <select name="template_key">
+                <option value="">Wybierz gotowy szablon</option>
+                <option value="__custom__">+ NOWY WŁASNY SZABLON</option>
               </select>
+              <input name="name" placeholder="Nazwa technologii" required>
+              <input name="element_type" placeholder="Typ elementu">
+              <input name="technology" placeholder="Technologia">
+              <input name="lacquer_sides" placeholder="Strony lakierowania">
+              <select name="unit">
+                <option value="m2">m2</option>
+                <option value="mb">mb</option>
+                <option value="szt">szt.</option>
+                <option value="none">bez ceny</option>
+              </select>
+              <input name="unit_price" placeholder="Cena netto" required>
+              <input name="notes" placeholder="Uwagi / opis">
+              <button type="submit" id="saveCutTechnologyPriceBtn">DODAJ NOWĄ POZYCJĘ</button>
+              <button id="clearCutTechnologyPriceBtn" type="button">WYCZYŚĆ / NOWA</button>
+            </form>
+          </section>
+          <section class="technology-price-base">
+            <div class="section-title-row">
+              <h3>Baza cen i szablonów</h3>
+              <div class="selection-actions">
+                <button id="editSelectedCutTechnologyPriceBtn" class="outline-action" type="button">EDYTUJ</button>
+                <button id="deleteSelectedCutTechnologyPriceBtn" class="outline-action danger-outline" type="button">USUŃ</button>
+              </div>
+            </div>
+            <div class="table-wrap quote-table technology-price-table">
+              <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Szablon</th>
+                  <th>Nazwa</th>
+                  <th>Typ elementu</th>
+                  <th>Technologia</th>
+                  <th>Strony</th>
+                  <th>J.m.</th>
+                  <th>Cena</th>
+                  <th>Uwagi</th>
+                </tr>
+              </thead>
+              <tbody id="cutTechnologyPricesBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
 
+        <section id="cuttingTab" class="tab-page">
+          <section class="cut-section cut-order-section">
+            <div class="cut-section-header">
+              <h2>I. Zamówienie</h2>
+              <div class="cut-actions-row">
+                <button id="exportCutJobProjectBtn" type="button" title="Wyślij wybraną pozycję do GibLab">Wyślij pozycję</button>
+                <button id="exportCutOrderProjectBtn" class="secondary" type="button" title="Wyślij każdą pozycję zamówienia jako osobny plik GibLab">Wyślij pozycje osobno</button>
+                <button id="importExportedProjectBtn" type="button">Odbierz wynik</button>
+                <button id="quoteCutJobBtn" type="button">Wyceń</button>
+              </div>
+            </div>
+            <div class="cut-order-line">
+              <select form="cutJobForm" name="order_id"></select>
+              <span id="cutStatus" class="hint"></span>
+            </div>
+          </section>
+
+          <section class="cut-section cut-position-section">
+            <div class="cut-section-header">
+              <h2>II. Pozycja</h2>
+              <div class="cut-actions-row">
+                <label class="file-button">
+                  Import formatek Excel
+                  <input id="cutExcelFile" type="file" accept=".xls,.xlsx,.csv">
+                </label>
+                <label class="file-button">
+                  Import .project 3D
+                  <input id="cutConstructorProjectFile" type="file" accept=".project,.xml">
+                </label>
+                <button id="cutTextImportToggleBtn" type="button">Import tekst / zdjęcie</button>
+                <button id="openMaterialCatalogImportBtn" type="button">Import materiałów Excel</button>
+              </div>
+            </div>
+
+            <form id="cutJobForm" class="cut-job-form">
+              <input name="name" placeholder="Nazwa pozycji, np. Pozycja 1" required>
+              <select name="material_id"></select>
+              <input name="material_name" placeholder="Płyta z Excela / ręcznie">
               <select name="status">
                 <option>Robocze</option>
                 <option>Zaimportowane formatki</option>
                 <option>Wyeksportowane do GibLab</option>
                 <option>Wynik z GibLab zaimportowany</option>
               </select>
-
-              <input id="cutJobMaterialSearch" class="cut-material-search" placeholder="Szukaj płyty">
-              <select id="cutJobProducerFilter" class="cut-filter-select"></select>
-              <select id="cutJobThicknessFilter" class="cut-filter-select"></select>
-              <select name="material_id" class="cut-material-select"></select>
-              <input name="material_name" placeholder="Płyta z Excela">
-              
-              <input id="cutJobEdgeMaterialSearch" class="cut-material-search" placeholder="Szukaj okleiny">
-              <select name="edge_material_id" class="cut-material-select"></select>
-              <input name="edge_material_name" placeholder="Okleina z Excela">
-              
-              <input name="notes" placeholder="Notatki">
-              
-              <div class="actions" style="grid-column: 1 / -1; justify-content: flex-start; margin-top: 5px;">
+              <div class="cut-actions-row cut-form-actions">
                 <button type="submit">Zapisz pozycję</button>
                 <button id="newCutJobBtn" type="button">Nowa pozycja</button>
                 <button id="deleteCutJobBtn" class="danger" type="button">Usuń pozycję</button>
                 <button id="clearCutJobBtn" type="button">Wyczyść</button>
               </div>
+              <details class="cut-more-settings">
+                <summary>Więcej ustawień pozycji</summary>
+                <div class="cut-more-settings-grid">
+                  <div class="cut-filter-group">
+                    <input id="cutJobMaterialSearch" placeholder="Szukaj płyty">
+                    <select id="cutJobProducerFilter"></select>
+                    <select id="cutJobThicknessFilter"></select>
+                  </div>
+                  <input id="cutJobEdgeMaterialSearch" placeholder="Szukaj okleiny">
+                  <select name="edge_material_id"></select>
+                  <input name="edge_material_name" placeholder="Okleina z Excela / ręcznie">
+                  <input name="notes" placeholder="Notatki">
+                </div>
+              </details>
             </form>
+          </section>
+          <input id="cutProjectFile" type="file" accept=".project,.xml" hidden>
 
           <div id="cutTextImportPanel" class="cut-text-import">
             <textarea id="cutTextImport" placeholder="240 x 450 sztuk 1 frez&#10;1621 x 746 sztuk 1 frez"></textarea>
@@ -422,42 +499,31 @@
               Import ze zdjęcia
               <input id="cutPhotoFile" type="file" accept="image/*">
             </label>
-            <button id="importCutTextBtn" type="button">Import z tekstu</button>
+            <button id="retryCutPhotoBtn" class="secondary" type="button" hidden>Ponów skan AI</button>
+            <button id="importCutTextBtn" type="button">Dodaj zaznaczone do pozycji</button>
             <span id="cutTextImportStatus" class="hint"></span>
+            <div id="cutSourcePreview" class="cut-source-preview"></div>
+            <details class="cut-import-settings">
+              <summary>Ustawienia importu / technologia robocza</summary>
+              <div class="cut-preview-tools">
+                <select id="cutPreviewTemplate"></select>
+                <select id="cutPreviewElementType"></select>
+                <select id="cutPreviewTechnology"></select>
+                <select id="cutPreviewLacquerSides"></select>
+                <input id="cutPreviewTechNotes" placeholder="Technologia / uwagi dla lakiernika">
+                <label class="check"><input id="cutPreviewWorkMilling" type="checkbox"> Frez</label>
+                <label class="check"><input id="cutPreviewWorkDrilling" type="checkbox"> Otwór</label>
+                <label class="check"><input id="cutPreviewWorkLacquer" type="checkbox"> Lakier</label>
+                <label class="check"><input id="cutPreviewWorkOther" type="checkbox"> Skos / inne</label>
+                <button id="applyCutPreviewDefaultsBtn" type="button">Zastosuj szablon do zaznaczonych</button>
+              </div>
+            </details>
+            <div id="cutTextPreview" class="cut-text-preview"></div>
           </div>
 
-          <form id="cutPartForm" class="stock-form cutting-part-form">
-            <input id="cutMaterialSearch" class="cut-material-search" placeholder="Szukaj płyty">
-            <select id="cutProducerFilter" class="cut-filter-select"></select>
-            <select id="cutThicknessFilter" class="cut-filter-select"></select>
-            <select name="material_id" class="cut-material-select"></select>
-            <input name="material_code" class="cut-code-field" placeholder="Kod płyty" readonly>
-            <input name="material_name" class="cut-material-name" placeholder="Płyta">
-
-            <input id="cutEdgeMaterialSearch" class="cut-material-search" placeholder="Szukaj okleiny">
-            <select name="edge_material_id" class="cut-material-select"></select>
-            <input name="edge_material_code" class="cut-code-field" placeholder="Kod okleiny" readonly>
-            <input name="edge_material_name" class="cut-material-name" placeholder="Okleina">
-
-            <input name="thickness" class="cut-short" placeholder="G" readonly>
-            <input name="length" class="cut-number" placeholder="Dł." required>
-            <input name="width" class="cut-number" placeholder="Szer." required>
-            <input name="quantity" class="cut-qty" placeholder="Ilość" value="1">
-            <label class="texture-check"><input name="texture" type="checkbox" value="1" checked> Tekstura</label>
-            <input name="name" class="cut-name-field" placeholder="Nazwa elementu">
-            <div class="edge-checks">
-              <label><input id="edgeAll" type="checkbox"> Oklej wszystko</label>
-              <label><input name="edge_top" type="checkbox" value="1"> OB góra</label>
-              <label><input name="edge_bottom" type="checkbox" value="1"> OH dół</label>
-              <label><input name="edge_left" type="checkbox" value="1"> OL lewa</label>
-              <label><input name="edge_right" type="checkbox" value="1"> OP prawa</label>
-            </div>
-            <input name="description" class="cut-description" placeholder="Opis">
-            <button type="submit">Dodaj formatkę</button>
-          </form>
-
           <div class="split-tables">
-            <div class="table-wrap quote-table">
+            <div class="table-wrap quote-table cut-jobs-table">
+              <div class="cut-table-title">Pozycje zamówienia</div>
               <table>
                 <thead>
                   <tr>
@@ -476,75 +542,197 @@
                 <tbody id="cutJobsBody"></tbody>
               </table>
             </div>
-            <div class="table-wrap quote-table">
+            <div class="cut-parts-toolbar cut-parts-toolbar-main">
+              <select id="cutPartsTemplateSelect"></select>
+              <span id="selectedCutPartsCount" class="cut-selected-count">Zaznaczone: 0</span>
+              <button id="applyCutPartsTemplateBtn" type="button">Zastosuj do zaznaczonych</button>
+              <button id="newCutPartEditorBtn" type="button">Dodaj formatkę</button>
+              <button id="editSelectedCutPartBtn" type="button">Edytuj zaznaczoną</button>
+              <button id="printCutLabelsBtn" type="button">Drukuj etykiety</button>
+              <button id="selectAllCutPartsBtn" type="button">Zaznacz wszystkie</button>
+              <button id="clearCutPartsSelectionBtn" type="button">Odznacz wszystkie</button>
+            </div>
+            <section class="cut-part-entry-panel cut-part-hidden-source" aria-hidden="true">
+              <form id="cutPartForm" class="stock-form cutting-part-form">
+                <input id="cutMaterialSearch" class="cut-material-search" placeholder="Szukaj płyty">
+                <select id="cutProducerFilter" class="cut-filter-select"></select>
+                <select id="cutThicknessFilter" class="cut-filter-select"></select>
+                <select name="material_id" class="cut-material-select"></select>
+                <input name="material_code" class="cut-code-field" placeholder="Kod płyty" readonly>
+                <input name="material_name" class="cut-material-name" placeholder="Płyta">
+
+                <input id="cutEdgeMaterialSearch" class="cut-material-search" placeholder="Szukaj okleiny">
+                <select name="edge_material_id" class="cut-material-select"></select>
+                <input name="edge_material_code" class="cut-code-field" placeholder="Kod okleiny" readonly>
+                <input name="edge_material_name" class="cut-material-name" placeholder="Okleina">
+
+                <input name="thickness" class="cut-short" placeholder="G" readonly>
+                <input name="length" class="cut-number" placeholder="Dł." required>
+                <input name="width" class="cut-number" placeholder="Szer." required>
+                <input name="quantity" class="cut-qty" placeholder="Ilość" value="1">
+                <label class="texture-check"><input name="texture" type="checkbox" value="1" checked> Tekstura</label>
+                <input name="name" class="cut-name-field" placeholder="Nazwa elementu">
+                <div class="edge-checks">
+                  <label><input id="edgeAll" type="checkbox"> Oklej wszystko</label>
+                  <label><input name="edge_top" type="checkbox" value="1"> OB góra</label>
+                  <label><input name="edge_bottom" type="checkbox" value="1"> OH dół</label>
+                  <label><input name="edge_left" type="checkbox" value="1"> OL lewa</label>
+                  <label><input name="edge_right" type="checkbox" value="1"> OP prawa</label>
+                </div>
+                <input name="description" class="cut-description" placeholder="Opis">
+                <button type="submit">Dodaj formatkę</button>
+              </form>
+            </section>
+            <div class="table-wrap quote-table cut-parts-table">
+              <div class="cut-table-title">Formatki w wybranej pozycji</div>
               <table>
                 <thead>
                   <tr>
+                    <th><input id="selectAllCutParts" type="checkbox" title="Zaznacz wszystkie formatki"></th>
                     <th>Lp.</th>
                     <th>D</th>
                     <th>S</th>
                     <th>Ilość</th>
-                    <th>Tkt</th>
-                    <th>OB</th>
-                    <th>OH</th>
-                    <th>OL</th>
-                    <th>OP</th>
-                    <th>Nazwa</th>
-                    <th></th>
+                    <th>m2</th>
+                    <th>Operacje</th>
+                    <th>Typ elementu</th>
+                    <th>Technologia</th>
+                    <th>Strony</th>
+                    <th>Nazwa / uwagi</th>
+                    <th>Cena tech.</th>
+                    <th>Wartość</th>
+                    <th>Akcje</th>
                   </tr>
                 </thead>
                 <tbody id="cutPartsBody"></tbody>
+                <tfoot id="cutPartsFoot"></tfoot>
               </table>
             </div>
           </div>
+          <section id="cutPartEditorPanel" class="cut-part-editor-panel" aria-hidden="true">
+            <div class="cut-section-header">
+              <h2>Edycja formatki</h2>
+              <div class="cut-actions-row">
+                <button id="closeCutPartEditorBtn" type="button">Anuluj</button>
+              </div>
+            </div>
+            <form id="cutPartEditorForm" class="cut-part-editor-form">
+              <input name="length" placeholder="D">
+              <input name="width" placeholder="S">
+              <input name="quantity" placeholder="Ilość" value="1">
+              <input name="name" placeholder="Nazwa / uwagi">
+              <label class="check"><input name="texture" type="checkbox" value="1" checked> TKT</label>
+              <label class="check"><input name="edge_top" type="checkbox" value="1"> OB</label>
+              <label class="check"><input name="edge_bottom" type="checkbox" value="1"> OH</label>
+              <label class="check"><input name="edge_left" type="checkbox" value="1"> OL</label>
+              <label class="check"><input name="edge_right" type="checkbox" value="1"> OP</label>
+              <label class="check"><input name="work_milling" type="checkbox" value="1"> Frez</label>
+              <label class="check"><input name="work_drilling" type="checkbox" value="1"> Otwór</label>
+              <label class="check"><input name="work_lacquer" type="checkbox" value="1"> Lakier</label>
+              <label class="check"><input name="work_other" type="checkbox" value="1"> Inne</label>
+              <select name="element_type"></select>
+              <select name="technology"></select>
+              <select name="lacquer_sides"></select>
+              <select name="technology_template"></select>
+              <input name="tech_notes" placeholder="Uwagi technologiczne / etykieta">
+              <button type="submit">Zapisz formatkę</button>
+            </form>
+          </section>
           <div class="cut-bottom-panel">
             <div id="cutMaterialChips" class="material-chips"></div>
-            <form id="cutQuoteForm" class="stock-form quote-form">
-              <input name="material_price" placeholder="Cena materiału / m2">
-              <input name="cut_price" placeholder="Cena cięcia / szt.">
-              <input name="edge_price" placeholder="Cena oklejania / mb">
-              <input name="milling_price" placeholder="Cena frezowania / szt.">
-              <input name="drilling_price" placeholder="Cena otworu / szt.">
-              <input name="lacquer_price" placeholder="Cena lakierowania / m2">
-              <input name="other_price" placeholder="Cena innej pracy / szt.">
-              <select name="service_price_item_id" class="service-price-select"></select>
-              <select name="service_price_target" class="service-target-select">
-                <option value="cut_price">Cięcie / szt.</option>
-                <option value="edge_price">Oklejanie / mb</option>
-                <option value="milling_price">Frezowanie / szt.</option>
-                <option value="drilling_price">Otwór / szt.</option>
-                <option value="lacquer_price">Lakierowanie / m2</option>
-                <option value="other_price">Inna praca / szt.</option>
-              </select>
-              <button id="applyServicePriceBtn" type="button">Wstaw cenę z cennika</button>
-              <span id="cutTotals" class="quote-summary">Kliknij zlecenie formatek, żeby zobaczyć metry i wycenę.</span>
-              <button id="addCutQuoteBtn" type="button">Dodaj robociznę/ceny do pozycji</button>
-              <button id="openCutExportFolderBtn" type="button">Pokaż plik importu GibLab</button>
-            </form>
-            <div class="table-wrap cut-quote-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Robocizna / cena</th>
-                    <th>J.m.</th>
-                    <th>Ilość</th>
-                    <th>Cena</th>
-                    <th>Wartość</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody id="cutQuoteLinesBody"></tbody>
-              </table>
-            </div>
-            <p class="hint margin-top">
-              Eksport do GibLab nie otwiera projektu automatycznie. Kliknij "Wyślij do GibLab Excel", potem w GibLab wybierz "Import z Excel" i wskaż zaznaczony plik z folderu C:\GibLabLocal\projects. Po rozkroju użyj "Importuj wynik rozkroju".
-            </p>
-          </div>
+            <span id="cutTotals" class="quote-summary cut-totals-line">Kliknij zlecenie formatek, żeby zobaczyć metry i wycenę.</span>
+            <details class="cut-labor-panel">
+              <summary>ROBOCIZNA / CENA</summary>
+              <form id="cutQuoteForm" class="stock-form quote-form">
+                <input name="material_price" placeholder="Cena materiału / m2">
+                <input name="cut_price" placeholder="Cena cięcia / szt.">
+                <input name="edge_price" placeholder="Cena oklejania / mb">
+                <input name="milling_price" placeholder="Cena frezowania / szt.">
+                <input name="drilling_price" placeholder="Cena otworu / szt.">
+                <input name="lacquer_price" placeholder="Cena lakierowania / m2">
+                <input name="other_price" placeholder="Cena innej pracy / szt.">
+                <select name="service_price_item_id" class="service-price-select"></select>
+                <select name="service_price_target" class="service-target-select">
+                  <option value="cut_price">Cięcie / szt.</option>
+                  <option value="edge_price">Oklejanie / mb</option>
+                  <option value="milling_price">Frezowanie / szt.</option>
+                  <option value="drilling_price">Otwór / szt.</option>
+                  <option value="lacquer_price">Lakierowanie / m2</option>
+                  <option value="other_price">Inna praca / szt.</option>
+                </select>
+                <button id="applyServicePriceBtn" type="button">Wstaw cenę z cennika</button>
+                <button id="addCutQuoteBtn" type="button">Dodaj robociznę/ceny do pozycji</button>
+                <button id="openCutExportFolderBtn" type="button">Pokaż plik importu GibLab</button>
+              </form>
+              <div class="table-wrap cut-quote-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Robocizna / cena</th>
+                      <th>J.m.</th>
+                      <th>Ilość</th>
+                      <th>Cena</th>
+                      <th>Wartość</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="cutQuoteLinesBody"></tbody>
+                </table>
+              </div>
+              <p class="hint margin-top">
+                Eksport do GibLab nie otwiera projektu automatycznie. Kliknij "Wyślij do GibLab Excel", potem w GibLab wybierz "Import z Excel" i wskaż zaznaczony plik z folderu C:\GibLabLocal\projects. Po rozkroju użyj "Importuj wynik rozkroju".
+              </p>
+            </details>
           </div>
         </section>
 
-        <section id="materialsTab" class="tab-page active">
-          <form id="materialForm" class="grid-form">
+        <section id="materialsTab" class="tab-page">
+          <section class="panel compact-panel material-quick-create">
+            <h3>Szybkie dodawanie do katalogu</h3>
+            <form id="quickMaterialFolderForm" class="grid-form material-quick-folder">
+              <select name="paren_id" required>
+                <option value="">Gdzie dodać folder / producenta</option>
+              </select>
+              <input name="name" placeholder="Nazwa folderu lub producenta" required>
+              <select name="folder_kind">
+                <option value="category">Folder / kategoria</option>
+                <option value="producer">Producent</option>
+              </select>
+              <button type="submit">Dodaj folder</button>
+            </form>
+            <form id="quickMaterialForm" class="grid-form material-quick-item">
+              <select name="paren_id" required>
+                <option value="">Folder docelowy</option>
+              </select>
+              <input name="name" placeholder="Nazwa materiału" required>
+              <input name="producer" placeholder="Producent">
+              <select name="material_type">
+                <option value="">Typ materiału</option>
+                <option value="MDF">MDF</option>
+                <option value="HDF">HDF</option>
+                <option value="Sklejka">Sklejka</option>
+                <option value="Płyta fornirowana">Płyta fornirowana</option>
+                <option value="Fornir klejony pod zamówienie">Fornir klejony pod zamówienie</option>
+                <option value="Okleina">Okleina</option>
+                <option value="Blat kompaktowy">Blat kompaktowy</option>
+                <option value="Inne">Inne</option>
+              </select>
+              <input name="thickness" inputmode="decimal" placeholder="Grubość mm">
+              <input name="length" inputmode="decimal" placeholder="Długość mm">
+              <input name="width" inputmode="decimal" placeholder="Szerokość mm">
+              <select name="unit">
+                <option value="m2">m²</option>
+                <option value="mb">mb</option>
+                <option value="szt">szt.</option>
+              </select>
+              <button type="submit">Dodaj materiał</button>
+            </form>
+            <p class="hint">ID i kod techniczny zostaną nadane automatycznie. Puste wymiary można uzupełnić później.</p>
+          </section>
+
+          <details class="panel compact-panel material-advanced-editor">
+            <summary>Edycja zaawansowana</summary>
+            <form id="materialForm" class="grid-form">
             <input name="id" placeholder="ID auto" readonly>
             <input name="paren_id" placeholder="Folder nadrzędny ID">
             <label class="check"><input name="isfolder" type="checkbox"> Folder</label>
@@ -578,8 +766,10 @@
             <input name="width" placeholder="Szerokość">
             <button type="submit">Zapisz pozycję</button>
             <button id="clearFormBtn" type="button">Wyczyść</button>
-            <button id="newMaterialFolderBtn" type="button">Nowy folder</button>
-          </form>
+            <button id="newMaterialFolderBtn" type="button">Nowy folder w zaznaczonym</button>
+            <span id="materialParentHint" class="hint material-parent-hint">Zaznacz folder lub materiał, aby dodać folder w tym miejscu.</span>
+            </form>
+          </details>
           <div class="material-filters">
             <input id="materialSearchFilter" placeholder="Szukaj po kodzie, nazwie, dekorze">
             <select id="materialProducerFilter">
@@ -672,6 +862,9 @@
         </section>
 
         <section id="stockTab" class="tab-page">
+          <div class="stock-filters">
+            <label class="check"><input id="hideZeroStock" type="checkbox"> Ukryj zerowy stan</label>
+          </div>
           <form id="stockForm" class="stock-form">
             <select name="event_type">
               <option value="use_reserved">Zużycie rezerwacji</option>
@@ -708,28 +901,43 @@
         </section>
 
         <section id="deliveriesTab" class="tab-page">
-          <form id="deliveryForm" class="grid-form">
-            <input name="supplier" placeholder="Dostawca">
-            <input name="document_number" placeholder="Numer WZ / faktury">
-            <input name="delivery_date" type="date">
-            <input name="notes" placeholder="Uwagi">
-            <button type="submit">Zapisz dostawę</button>
-            <button id="newDeliveryBtn" type="button">Nowa dostawa</button>
-            <button id="postDeliveryBtn" type="button">Zaksięguj dostawę</button>
-          </form>
+          <h2>Dostawy materiałów</h2>
+          <section class="compact-panel delivery-panel">
+            <h3>1. Dane dostawy</h3>
+            <form id="deliveryForm" class="delivery-form">
+              <label>Dostawca<input name="supplier" placeholder="np. Meblolux"></label>
+              <label>Numer dokumentu<input name="document_number" placeholder="WZ / faktura"></label>
+              <label>Data dostawy<input name="delivery_date" type="date"></label>
+              <label>Uwagi<input name="notes" placeholder="Uwagi do całej dostawy"></label>
+              <div class="delivery-form-actions">
+                <button type="submit">Zapisz dostawę</button>
+                <button id="newDeliveryBtn" type="button">Nowa dostawa</button>
+                <button id="postDeliveryBtn" type="button">Zaksięguj dostawę</button>
+              </div>
+            </form>
+          </section>
 
-          <form id="deliveryLineForm" class="stock-form">
-            <select name="material_id" required>
-              <option value="">Wybierz materiał</option>
-            </select>
-            <input name="quantity" placeholder="Ilość" required>
-            <input name="unit_price" placeholder="Cena zakupu">
-            <input name="notes" placeholder="Uwagi pozycji">
-            <button type="submit">Dodaj pozycję</button>
-          </form>
+          <section class="compact-panel delivery-panel">
+            <h3>2. Dodaj materiał do wybranej dostawy</h3>
+            <form id="deliveryLineForm" class="delivery-line-form">
+              <label class="delivery-material-field">Materiał
+                <input id="deliveryMaterialSearch" type="search" placeholder="Szukaj po kodzie, nazwie, producencie">
+                <select name="material_id" required>
+                  <option value="">Wybierz materiał</option>
+                </select>
+              </label>
+              <label>Liczba arkuszy<input name="sheet_count" placeholder="np. 10"></label>
+              <label>Ilość magazynowa<input name="quantity" placeholder="m² / mb / szt." required></label>
+              <label>Cena jednostkowa<input name="unit_price" placeholder="Cena za 1 m² / jednostkę"></label>
+              <label>Uwagi pozycji<input name="notes" placeholder="Uwagi"></label>
+              <button type="submit">Dodaj pozycję</button>
+              <span id="deliveryQuantityHint" class="hint delivery-quantity-hint"></span>
+            </form>
+          </section>
 
-          <div class="split-grid">
-            <div class="table-wrap">
+          <section class="delivery-list-section">
+            <h3>3. Lista dostaw</h3>
+            <div class="table-wrap delivery-table-wrap">
               <table>
                 <thead>
                   <tr>
@@ -746,7 +954,11 @@
                 <tbody id="deliveriesBody"></tbody>
               </table>
             </div>
-            <div class="table-wrap">
+          </section>
+
+          <section class="delivery-list-section">
+            <h3>4. Pozycje wybranej dostawy</h3>
+            <div class="table-wrap delivery-table-wrap">
               <table>
                 <thead>
                   <tr>
@@ -761,10 +973,10 @@
                 <tbody id="deliveryLinesBody"></tbody>
               </table>
             </div>
-          </div>
+          </section>
           <p id="deliveryStatus" class="hint">Szkic dostawy nie zmienia magazynu. Stan rośnie dopiero po kliknięciu „Zaksięguj dostawę”.</p>
-          <section class="panel compact-panel">
-            <h3>Korekty dostaw</h3>
+          <details class="compact-panel delivery-corrections">
+            <summary>Korekty dostaw</summary>
             <form id="deliveryCorrectionForm" class="grid-form">
               <input name="correction_number" placeholder="Numer korekty">
               <input name="reason" placeholder="Powód korekty" required>
@@ -815,7 +1027,7 @@
               </div>
             </div>
             <p id="deliveryCorrectionStatus" class="hint">Korekta w szkicu nie zmienia magazynu. Stan zmienia się dopiero po zaksięgowaniu korekty.</p>
-          </section>
+          </details>
         </section>
 
         <section id="purchaseTab" class="tab-page">
@@ -864,8 +1076,18 @@
             <button id="importLatestProjectBtn" type="button">Importuj najnowszy projekt GibLab</button>
             <button id="showRemainderLogsBtn" type="button">Sprawdź połączenie GibLab</button>
             <button id="copyRemaindersUrlBtn" type="button">Kopiuj adres dla GibLab</button>
+            <button id="refreshOffcutsBtn" type="button">Odswiez resztki</button>
+            <button id="checkGibLabProjectSyncBtn" type="button">Sprawdz nowe wyniki GibLab</button>
+            <label class="check"><input id="autoRefreshOffcuts" type="checkbox"> Auto odswiezanie</label>
+            <select id="offcutsRefreshInterval">
+              <option value="30">co 30 s</option>
+              <option value="60" selected>co 60 s</option>
+              <option value="120">co 2 min</option>
+            </select>
+            <span id="offcutsRefreshStatus" class="hint"></span>
             <span id="remainderStatus" class="hint"></span>
           </div>
+          <p id="giblabProjectSyncStatus" class="hint"></p>
           <p class="hint">Adres dla GibLab do resztek: <code id="remaindersUrlText">http://127.0.0.1:3080/giblab/remainders</code>. W GibLab ten adres musi być wpisany z http:// na początku.</p>
           <div class="toolbar-row">
             <input id="offcutStationName" placeholder="Nazwa stanowiska, np. DESKTOP-MQBAC93">
@@ -885,6 +1107,7 @@
             <button type="submit">Dodaj resztkę</button>
           </form>
           <div class="selection-actions">
+            <button id="printSelectedOffcutLabelBtn" class="outline-action" type="button">DRUKUJ ETYKIETĘ</button>
             <button id="assignSelectedOffcutStorageBtn" class="outline-action" type="button">WYZNACZ MIEJSCE</button>
             <button id="reserveSelectedOffcutBtn" class="outline-action" type="button">REZERWUJ</button>
             <button id="releaseSelectedOffcutBtn" class="outline-action" type="button">ZWOLNIJ</button>
@@ -947,6 +1170,215 @@
           <pre id="remainderLogs" class="log-panel"></pre>
         </section>
 
+        <section id="productionTab" class="tab-page">
+          <div class="production-toolbar">
+            <div class="production-stations" role="tablist" aria-label="Stanowisko produkcyjne">
+              <button class="production-station active" data-production-station="CNC" type="button">CNC</button>
+              <button class="production-station" data-production-station="Oklejarka" type="button">Oklejarka</button>
+              <button class="production-station" data-production-station="Lakiernia" type="button">Lakiernia</button>
+            </div>
+            <input id="productionOperator" placeholder="Operator">
+            <button id="refreshProductionBtn" type="button">Odśwież kolejkę</button>
+          </div>
+          <div id="productionSummary" class="production-summary"></div>
+          <div class="table-wrap production-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Kolejka</th>
+                  <th>Zamówienie</th>
+                  <th>Klient</th>
+                  <th>Pozycja</th>
+                  <th>Materiał</th>
+                  <th>Szt.</th>
+                  <th>m2</th>
+                  <th>Status</th>
+                  <th>Operator</th>
+                  <th>Problem</th>
+                  <th>Akcje</th>
+                </tr>
+              </thead>
+              <tbody id="productionTasksBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="productionCostsTab" class="tab-page">
+          <div class="production-costs-page">
+        <div class="section-title-row">
+          <h2>Analiza produkcji i kosztow</h2>
+          <button id="refreshProductionCostsBtn" type="button">Odswiez dane</button>
+        </div>
+        <p class="hint">Dane sa liczone z formatek, technologii i wynikow GibLab. Koszty wpisujesz roboczo na tym komputerze.</p>
+        <form id="productionAnalyticsFilterForm" class="production-filter-form compact-panel">
+          <label>Zamowienie
+            <select id="productionAnalyticsOrderFilter" name="order_id">
+              <option value="">Wszystkie zamowienia</option>
+            </select>
+          </label>
+          <label>Miesiac
+            <input id="productionAnalyticsMonthFilter" name="month" type="month">
+          </label>
+          <button type="submit">Pokaz dane</button>
+          <button id="clearProductionAnalyticsFiltersBtn" type="button" class="secondary">Wyczysc filtr</button>
+          <span id="productionAnalyticsFilterInfo" class="hint">Filtr: wszystkie dane</span>
+        </form>
+        <div id="productionCostsCards" class="production-costs-cards"></div>
+
+            <section class="compact-panel production-costs-panel">
+              <h3>Koszty realne stanowisk</h3>
+              <form id="productionCostSettingsForm" class="production-cost-form">
+                <label>CNC / rozkroj - koszt razem<input name="cnc_cost" placeholder="zl"></label>
+                <label>Oklejarka - koszt razem<input name="edge_cost" placeholder="zl"></label>
+                <label>Lakiernia - koszt razem<input name="lacquer_cost" placeholder="zl"></label>
+                <label>Inne prace - koszt razem<input name="other_cost" placeholder="zl"></label>
+                <button type="submit">Zapisz koszty</button>
+              </form>
+              <div id="productionUnitCosts" class="production-unit-costs"></div>
+            </section>
+
+            <section class="compact-panel">
+              <h3>Podsumowanie wedlug technologii</h3>
+              <div class="table-wrap production-analytics-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Typ elementu</th>
+                      <th>Technologia</th>
+                      <th>Strony</th>
+                      <th>Szt.</th>
+                      <th>m2</th>
+                      <th>mb okleiny</th>
+                      <th>Frez</th>
+                      <th>Otwor</th>
+                      <th>Lakier m2</th>
+                      <th>Inne</th>
+                    </tr>
+                  </thead>
+                  <tbody id="productionTechnologySummaryBody"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="compact-panel">
+              <h3>Zlecenia i pozycje</h3>
+              <div class="table-wrap production-analytics-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Zamowienie</th>
+                      <th>Klient</th>
+                      <th>Pozycja</th>
+                      <th>Material</th>
+                      <th>Status</th>
+                      <th>Szt.</th>
+                      <th>m2</th>
+                      <th>GibLab ark./m2</th>
+                      <th>Okleina mb</th>
+                    </tr>
+                  </thead>
+                  <tbody id="productionJobSummaryBody"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section id="manualTab" class="tab-page">
+          <div class="manual-page">
+            <h2>Jak pracowac w programie</h2>
+            <p class="manual-lead">Kolejnosc pracy: klient, zamowienie, pozycje, formatki, GibLab, produkcja, platnosci i magazyn.</p>
+
+            <div class="manual-grid">
+              <section class="manual-card">
+                <h3>1. Klient i zamowienie</h3>
+                <ol>
+                  <li>Wejdz w <strong>Klienci</strong> i dodaj klienta.</li>
+                  <li>Wejdz w <strong>Zamowienia</strong> i kliknij <strong>+ Dodaj nowe zamowienie</strong>.</li>
+                  <li>Uzupelnij klienta, nazwe zlecenia, termin i status.</li>
+                  <li>Jezeli zlecenie jest pilne, wpisz procent w polu <strong>Doplata pilna %</strong>.</li>
+                  <li>Kliknij <strong>Zapisz zamowienie</strong>.</li>
+                </ol>
+              </section>
+
+              <section class="manual-card">
+                <h3>2. Pozycje i formatki</h3>
+                <ol>
+                  <li>Wejdz w <strong>Formatki</strong>.</li>
+                  <li>Wybierz zamowienie i wpisz nazwe pozycji, np. fronty, polwalek, cokol.</li>
+                  <li>Wybierz material z listy GibLab albo wpisz material recznie.</li>
+                  <li>Formatki dodasz z tekstu, zdjecia, Excela albo przyciskiem <strong>Dodaj formatke</strong>.</li>
+                  <li>Zaznacz formatki checkboxami i wybierz szablon technologii.</li>
+                </ol>
+              </section>
+
+              <section class="manual-card">
+                <h3>3. Skan zdjecia / AI</h3>
+                <ol>
+                  <li>Kliknij <strong>Import tekst / zdjecie</strong>.</li>
+                  <li>Wybierz zdjecie listy formatek.</li>
+                  <li>Jezeli wynik jest slaby, uzyj <strong>Ponow skan AI</strong>.</li>
+                  <li>Sprawdz wymiary przed dodaniem do pozycji.</li>
+                  <li>Kliknij <strong>Dodaj zaznaczone do pozycji</strong>.</li>
+                </ol>
+              </section>
+
+              <section class="manual-card">
+                <h3>4. GibLab rozkroj</h3>
+                <ol>
+                  <li>Dla kilku pozycji uzywaj <strong>Wyslij pozycje osobno</strong>.</li>
+                  <li>W GibLab otworz plik .project dla konkretnej pozycji.</li>
+                  <li>Po rozkroju zapisz wynik w GibLab.</li>
+                  <li>W programie kliknij <strong>Odbierz wynik</strong>.</li>
+                  <li>Sprawdz liczbe arkuszy, m2 i status pozycji.</li>
+                </ol>
+              </section>
+
+              <section class="manual-card">
+                <h3>5. Produkcja</h3>
+                <ol>
+                  <li>Wejdz w <strong>Produkcja</strong>.</li>
+                  <li>Wybierz stanowisko: <strong>CNC</strong>, <strong>Oklejarka</strong> albo <strong>Lakiernia</strong>.</li>
+                  <li>Operator wpisuje swoje imie.</li>
+                  <li>Kliknij <strong>Start</strong>, kiedy praca zaczyna sie na stanowisku.</li>
+                  <li>Problem zglaszaj przyciskiem <strong>Problem</strong>.</li>
+                </ol>
+              </section>
+
+              <section class="manual-card">
+                <h3>6. Ceny i platnosci</h3>
+                <ol>
+                  <li>Ceny technologii ustawiasz w <strong>Cennik technologii</strong>.</li>
+                  <li>Wartosc zamowienia liczy sie z pozycji, formatek i doplat.</li>
+                  <li>Wplaty dodajesz w zakladce <strong>Zamowienia</strong>.</li>
+                  <li>Saldo klienta widac w <strong>Klienci</strong> i na liscie zamowien.</li>
+                </ol>
+              </section>
+
+              <section class="manual-card">
+                <h3>7. Materialy, dostawy i stany</h3>
+                <ol>
+                  <li>Nowe materialy dodajesz w <strong>Materialy</strong>.</li>
+                  <li>Dostawy wpisujesz w <strong>Dostawy</strong>.</li>
+                  <li>Stan rosnie dopiero po kliknieciu <strong>Zaksieguj dostawe</strong>.</li>
+                  <li>Aktualne ilosci sprawdzisz w <strong>Stany</strong>.</li>
+                  <li>Braki i potrzeby zakupowe sprawdzisz w <strong>Zakupy</strong>.</li>
+                </ol>
+              </section>
+
+              <section class="manual-card">
+                <h3>8. Resztki i backup</h3>
+                <ol>
+                  <li>Resztki po rozkroju zapisuj w <strong>Resztki</strong> z wymiarem i lokalizacja regalu.</li>
+                  <li>Przy kilku komputerach rezerwuj resztke pod projekt.</li>
+                  <li>Przed wiekszymi zmianami rob <strong>Backup</strong>.</li>
+                  <li>Nie usuwaj bazy danych ani plikow runtime.</li>
+                </ol>
+              </section>
+            </div>
+          </div>
+        </section>
+
         <section id="backupTab" class="tab-page">
           <div class="toolbar-row">
             <button id="createBackupBtn" type="button">Utwórz backup</button>
@@ -982,6 +1414,6 @@
     </div>
 
     <div id="toast" class="toast"></div>
-    <script src="/app.js" type="module"></script>
+    <script src="/app.js?v=2" type="module"></script>
   </body>
 </html>

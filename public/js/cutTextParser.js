@@ -1,4 +1,4 @@
-﻿const MIN_PART_SIDE_MM = 80;
+const MIN_PART_SIDE_MM = 80;
 
 export function parseCutTextRows(text) {
   const normalizedText = normalizeCutText(text);
@@ -44,11 +44,19 @@ function parseCutTextLine(line, options) {
 
   const quantityResult = extractQuantity(match[3]);
   const quantity = quantityResult.quantity;
-  const tail = cleanupDescription(quantityResult.tail);
+  let tail = cleanupDescription(quantityResult.tail);
   if (!quantity || !isLikelyQuantity(quantity)) return null;
 
   const hasNoMilling = /\bbez\s+frez/i.test(tail);
   const hasMilling = /\bfrez/i.test(tail);
+
+  const oklDMatch = tail.match(/oklD:(\d)/i);
+  const oklSMatch = tail.match(/oklS:(\d)/i);
+  const oklD = oklDMatch ? parseInt(oklDMatch[1], 10) : 0;
+  const oklS = oklSMatch ? parseInt(oklSMatch[1], 10) : 0;
+
+  tail = tail.replace(/okl[DS]:\d/gi, "").trim();
+
   const description = [tail, options.baseName].filter(Boolean).join(" | ");
   const fallbackName = cleanupName(tail);
 
@@ -60,7 +68,11 @@ function parseCutTextLine(line, options) {
     description,
     work_milling: hasNoMilling ? false : options.defaultMilling || hasMilling,
     work_drilling: /wierc|otwor/i.test(tail),
-    work_lacquer: options.isLacqueredFront || /lakier/i.test(tail)
+    work_lacquer: options.isLacqueredFront || /lakier/i.test(tail),
+    edge_top: oklD >= 1,
+    edge_bottom: oklD >= 2,
+    edge_left: oklS >= 1,
+    edge_right: oklS >= 2
   };
 }
 
